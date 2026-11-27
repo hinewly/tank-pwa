@@ -688,6 +688,22 @@ kbd {
   font-size: 9px;
 }
 
+.gallery-open {
+  margin-top: 9px;
+  padding: 7px 12px;
+  border: 1px solid rgba(218, 232, 171, .2);
+  border-radius: 8px;
+  background: rgba(10, 15, 9, .56);
+  color: #bcc5af;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.gallery-open:hover {
+  border-color: rgba(218, 238, 146, .44);
+  color: var(--acid);
+}
+
 .sync-dot {
   width: 6px;
   height: 6px;
@@ -705,6 +721,123 @@ kbd {
     linear-gradient(145deg, rgba(43, 55, 36, .97), rgba(17, 24, 15, .97));
   box-shadow: 0 30px 90px rgba(0, 0, 0, .55);
   text-align: center;
+}
+
+.gallery-panel {
+  width: min(1060px, 100%);
+  max-height: min(86vh, 760px);
+  overflow-y: auto;
+  text-align: left;
+}
+
+.gallery-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.gallery-head h2 {
+  margin-bottom: 0;
+}
+
+.gallery-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(220, 232, 178, .22);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .05);
+  color: #e3e8d8;
+  cursor: pointer;
+}
+
+.tank-gallery-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tank-card {
+  overflow: hidden;
+  border: 1px solid rgba(219, 232, 177, .15);
+  border-radius: 10px;
+  background: rgba(7, 12, 7, .55);
+}
+
+.tank-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1.75;
+  object-fit: contain;
+  background:
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%),
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, #171e14 25%, #171e14 75%, rgba(255,255,255,.035) 75%);
+  background-position: 0 0, 9px 9px;
+  background-size: 18px 18px;
+}
+
+.tank-card-copy {
+  padding: 8px 10px 10px;
+}
+
+.tank-card-copy strong {
+  display: block;
+  color: #edf1df;
+  font-size: 13px;
+}
+
+.tank-card-copy span {
+  display: inline-block;
+  margin-top: 4px;
+  color: #87917e;
+  font-size: 9px;
+}
+
+.tank-card-copy b {
+  float: right;
+  padding: 2px 6px;
+  border: 1px solid rgba(213, 232, 155, .2);
+  border-radius: 999px;
+  color: var(--acid);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.backdrop-picker {
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(218, 231, 176, .12);
+}
+
+.backdrop-picker > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #8f9984;
+  font-size: 10px;
+}
+
+#backdrop-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.backdrop-chip {
+  padding: 7px 11px;
+  border: 1px solid rgba(218, 231, 176, .18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .04);
+  color: #bfc8b2;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.backdrop-chip.active {
+  border-color: var(--acid);
+  background: var(--acid);
+  color: #18200f;
+  font-weight: 800;
 }
 
 .compact-panel {
@@ -1070,6 +1203,10 @@ kbd {
 
   .result-stats {
     grid-template-columns: repeat(3, 1fr);
+  }
+
+  .tank-gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .bearing-readout {

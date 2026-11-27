@@ -107,6 +107,36 @@ async function run() {
         fullPage: true
       });
     }
+    await desktop.click("#btn-gallery");
+    await desktop.waitForTimeout(900);
+    report.gallery = await desktop.evaluate(() => {
+      const cards = [...document.querySelectorAll(".tank-card")];
+      return {
+        cards: cards.length,
+        loaded: cards.filter((card) => {
+          const image = card.querySelector("img");
+          return image && image.complete && image.naturalWidth > 0;
+        }).length,
+        backdrops: document.querySelectorAll("[data-backdrop]").length
+      };
+    });
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-车型图鉴-20261127.png"),
+        fullPage: true
+      });
+    }
+    report.backdrops = {};
+    for (const backdropId of ["plain", "desert", "forest", "europe"]) {
+      await desktop.click('[data-backdrop="' + backdropId + '"]');
+      await desktop.waitForTimeout(260);
+      report.backdrops[backdropId] = await desktop.evaluate(() => {
+        const snapshot = window.__tankTest.getSnapshot();
+        return { selected: snapshot.backdrop, ready: snapshot.backdropReady };
+      });
+    }
+    await desktop.click("#btn-gallery-close");
+    await desktop.waitForTimeout(100);
 
     await desktop.click("#btn-start");
     await desktop.waitForTimeout(500);
@@ -117,9 +147,55 @@ async function run() {
         fullPage: true
       });
     }
+    const outOfRangeStart = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const target = snapshot.enemies[0];
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.setPlayerPosition(2100, 1400);
+      return {
+        id: target.id,
+        distance: Math.hypot(target.x - 2100, target.y - 1400),
+        shotsFired: target.shotsFired,
+        range: snapshot.enemyRange,
+        playerRange: snapshot.playerRange,
+        moveOk: window.__tankTest.setPlayerPosition(2100, 1400)
+      };
+    });
+    await desktop.waitForTimeout(1800);
+    const outOfRangeEnd = await desktop.evaluate((target) => {
+      const snapshot = window.__tankTest.getSnapshot();
+      return {
+        shotsFired: snapshot.enemies.find((enemy) => enemy.id === target.id).shotsFired,
+        inRange: window.__tankTest.enemyInRange(target.id)
+      };
+    }, outOfRangeStart);
+    report.range = {
+      ...outOfRangeStart,
+      shotsAfterWait: outOfRangeEnd.shotsFired,
+      stayedOutOfRange: !outOfRangeEnd.inRange,
+      outOfRangeDidNotFire: outOfRangeEnd.shotsFired === outOfRangeStart.shotsFired
+    };
     await desktop.evaluate(() => window.__tankTest.startBattle());
     await desktop.waitForTimeout(100);
     const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.tankViews = await desktop.evaluate(() => {
+      const enemy = window.__tankTest.getSnapshot().enemies[0];
+      const at = (angle, distance) => ({
+        x: enemy.x + Math.cos(angle) * distance,
+        y: enemy.y + Math.sin(angle) * distance
+      });
+      const front = at(enemy.angle, 500);
+      const rear = at(enemy.angle + Math.PI, 500);
+      const sideA = at(enemy.angle + Math.PI / 2, 500);
+      const sideB = at(enemy.angle - Math.PI / 2, 500);
+      return {
+        front: window.__tankTest.enemySpriteViewAt(enemy.id, front.x, front.y),
+        rear: window.__tankTest.enemySpriteViewAt(enemy.id, rear.x, rear.y),
+        sideA: window.__tankTest.enemySpriteViewAt(enemy.id, sideA.x, sideA.y),
+        sideB: window.__tankTest.enemySpriteViewAt(enemy.id, sideB.x, sideB.y),
+        spriteReady: window.__tankTest.enemySpriteReady(enemy.id)
+      };
+    });
     await desktop.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
     const aimStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     await desktop.mouse.down({ button: "right" });
@@ -582,7 +658,28 @@ async function run() {
   const projection = report.projection || {};
   const fixed = report.fixedTurret || {};
   const mobile = report.mobile || {};
+  const gallery = report.gallery || {};
+  const backdrops = report.backdrops || {};
+  const range = report.range || {};
+  const tankViews = report.tankViews || {};
   const passed = (
+    gallery.cards === 6 &&
+    gallery.loaded === 6 &&
+    gallery.backdrops === 4 &&
+    Object.values(backdrops).length === 4 &&
+    Object.values(backdrops).every((item) => item.ready && item.selected) &&
+    range.range === 800 &&
+    range.playerRange === 800 &&
+    range.distance > 800 &&
+    range.moveOk &&
+    range.stayedOutOfRange &&
+    range.outOfRangeDidNotFire &&
+    tankViews.front?.view === "front" &&
+    tankViews.rear?.view === "rear" &&
+    tankViews.sideA?.view === "side" &&
+    tankViews.sideB?.view === "side" &&
+    tankViews.sideA?.mirror !== tankViews.sideB?.mirror &&
+    tankViews.spriteReady &&
     report.desktopPlay.enemyCount === 10 &&
     report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
     report.desktopPlay.mouseAimChanged > 0.01 &&

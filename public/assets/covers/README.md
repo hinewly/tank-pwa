@@ -1,6 +1,6 @@
 # 第一人称掩体 billboard 素材接口
 
-本目录预留给原创 PNG/WebP 掩体素材。当前 `data.js` 的 `COVER_ART` 配置为空，游戏使用 Canvas 矢量 fallback。
+本目录存放正式原创 WebP 掩体 billboard。对应文件已接入 `data.js` 的 `COVER_ART`；若图片加载失败，游戏才回退到 Canvas 矢量绘制。
 
 ## 推荐规格
 
@@ -12,26 +12,24 @@
 
 ## 配置
 
-在 `public/data.js` 的 `COVER_ART` 中填入相对路径，例如：
+在 `public/data.js` 的 `COVER_ART` 中维护相对路径，例如：
 
 ```js
 const COVER_ART = {
   concrete: {
-    normal: "assets/covers/concrete-normal.webp",
-    damaged: "assets/covers/concrete-damaged.webp",
-    aspect: 1.9
-  },
-  sandbag: {
-    normal: "assets/covers/sandbag-normal.webp",
-    damaged: "assets/covers/sandbag-damaged.webp",
-    aspect: 2.2
+    normal: "assets/covers/concrete.webp",
+    damaged: "",
+    aspect: 1.9,
+    variants: { stone: "assets/cover-variants/stone-wall.webp" }
   }
 };
 ```
 
 支持类型：`concrete`、`sandbag`、`wood`、`earth`、`wreck`。
 
-正式启用图片后，把实际文件路径同步加入 `service-worker.js` 的 `ASSETS`，并递增 `CACHE_VERSION`，保证首次离线安装也能拿到素材。
+当前正式文件由 `tools/process-vidu-assets.py` 从 `art-source/vidu/` 自动生成，尺寸、哈希和源文件见 `public/assets/manifest.json`。
+
+后续替换图片时，把实际文件路径同步更新到 `service-worker.js` 的 `ASSETS`，并递增 `CACHE_VERSION`，保证首次离线安装也能拿到素材。
 
 素材必须是本项目原创或已取得明确商用授权，不使用商业游戏截图或拆包资源。
 

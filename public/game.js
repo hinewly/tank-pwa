@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.2.2";
+  const APP_VERSION = "v0.3.0";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -63,6 +63,8 @@
   let toastTimer = 0;
   let deferredInstallPrompt = null;
   let installDismissed = false;
+  let selectedBackdrop = "europe";
+  let backdropImages = new Map();
   let saveData = Sync ? Sync.loadLocal() : null;
   let muted = !!(saveData && saveData.settings && saveData.settings.muted);
   let fireHeld = false;
@@ -513,7 +515,8 @@
       isPlayer: tank.isPlayer,
       damage: tank.isPlayer ? B.playerDamage : B.enemyDamage,
       alive: true,
-      life: 2.4
+      life: 2.4,
+      rangeLeft: tank.isPlayer ? B.playerRange : B.enemyRange
     });
     tank.ammo -= 1;
     tank.shotsFired += 1;
@@ -559,6 +562,7 @@
       w: 64,
       h: 76,
       type: "wreck",
+      artVariant: ["front", "side", "rear", "alt"][kills % 4],
       id: "wreck-" + Math.random().toString(36).slice(2),
       hp: null,
       maxHp: null,
@@ -676,7 +680,8 @@
     for (const bullet of bullets) {
       if (!bullet.alive) continue;
       bullet.life -= dt;
-      if (bullet.life <= 0) {
+      bullet.rangeLeft -= Math.hypot(bullet.vx, bullet.vy) * dt;
+      if (bullet.life <= 0 || bullet.rangeLeft <= 0) {
         bullet.alive = false;
         continue;
       }
@@ -926,6 +931,38 @@
 
   // ---------- 场景绘制 ----------
   const drawBackdrop = () => {
+    const background = backdropImage(selectedBackdrop);
+    if (background) {
+      const imageHeight = VIEW_H + 32;
+      const imageWidth = imageHeight * background.naturalWidth / background.naturalHeight;
+      const period = imageWidth * 2;
+      const yawNorm = ((player.turretAngle + Math.PI) % TAU + TAU) % TAU;
+      const offset = -(yawNorm / TAU) * period;
+      const pitchShift = Math.tan(player.pitch) * currentFocal() * 0.38;
+      ctx.fillStyle = "#8ca0a0";
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, VIEW_W, VIEW_H);
+      ctx.clip();
+      for (let i = -2; i <= 3; i += 1) {
+        const x = offset + i * period;
+        ctx.drawImage(background, x, -18 + pitchShift, imageWidth, imageHeight);
+        ctx.save();
+        ctx.translate(x + imageWidth * 2, -18 + pitchShift);
+        ctx.scale(-1, 1);
+        ctx.drawImage(background, 0, 0, imageWidth, imageHeight);
+        ctx.restore();
+      }
+      ctx.restore();
+      const atmospheric = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+      atmospheric.addColorStop(0, "rgba(48,62,58,.12)");
+      atmospheric.addColorStop(0.62, "rgba(84,75,50,.04)");
+      atmospheric.addColorStop(1, "rgba(13,20,12,.22)");
+      ctx.fillStyle = atmospheric;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      return;
+    }
     const horizon = horizonY();
     const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
     sky.addColorStop(0, "#8ba7b3");
@@ -1283,12 +1320,42 @@
   };
 
   const coverImages = new Map();
+  const tankImages = new Map();
+
+  const tankImage = (artId, view) => {
+    const art = D.TANK_ART && D.TANK_ART[artId];
+    const src = art && art[view];
+    if (!src) return null;
+    const key = artId + ":" + view;
+    let image = tankImages.get(key);
+    if (!image) {
+      image = new Image();
+      image.decoding = "async";
+      image.src = src;
+      tankImages.set(key, image);
+    }
+    return image.complete && image.naturalWidth ? image : null;
+  };
+
+  const backdropImage = (backdropId) => {
+    const item = D.BACKDROPS && D.BACKDROPS[backdropId];
+    if (!item) return null;
+    let image = backdropImages.get(backdropId);
+    if (!image) {
+      image = new Image();
+      image.decoding = "async";
+      image.src = item.src;
+      backdropImages.set(backdropId, image);
+    }
+    return image.complete && image.naturalWidth ? image : null;
+  };
 
   const coverImage = (obstacle) => {
     const art = D.COVER_ART && D.COVER_ART[obstacle.type];
     if (!art) return null;
     const damaged = obstacle.hp !== null && obstacle.maxHp && obstacle.hp <= obstacle.maxHp * 0.55;
-    const src = damaged && art.damaged ? art.damaged : art.normal;
+    const variant = obstacle.artVariant && art.variants ? art.variants[obstacle.artVariant] : "";
+    const src = damaged && art.damaged ? art.damaged : (variant || art.normal);
     if (!src) return null;
     const key = obstacle.type + ":" + src;
     let image = coverImages.get(key);
@@ -1349,7 +1416,7 @@
     ctx.restore();
   };
 
-  const drawEnemy = (enemy, projection) => {
+  const drawVectorEnemy = (enemy, projection) => {
     const scale = projection.scale;
     const width = clamp(enemy.type.hullWidth * 1.65 * scale, 12, VIEW_W);
     const height = clamp(70 * scale, 10, VIEW_H);
@@ -1416,6 +1483,85 @@
       ctx.fillRect(cx - width * 0.42, top - 25, width * 0.84 * p, 6);
     }
     ctx.restore();
+  };
+
+  const enemySpriteViewFor = (enemy, playerX, playerY) => {
+    const towardPlayer = Math.atan2(playerY - enemy.y, playerX - enemy.x);
+    const relative = angleDelta(enemy.angle, towardPlayer);
+    const absolute = Math.abs(relative);
+    let view = "side";
+    if (absolute < Math.PI / 3) view = "front";
+    else if (absolute > Math.PI * 0.66) view = "rear";
+    return { view, mirror: relative > 0 };
+  };
+
+  const enemySpriteView = (enemy) => {
+    if (!player) return { view: "front", mirror: false };
+    return enemySpriteViewFor(enemy, player.x, player.y);
+  };
+
+  const drawEnemy = (enemy, projection) => {
+    const selection = enemySpriteView(enemy);
+    const sprite = tankImage(enemy.type.artId, selection.view);
+    if (!sprite) {
+      drawVectorEnemy(enemy, projection);
+      return;
+    }
+    const height = clamp(82 * projection.scale, 14, VIEW_H * 0.8);
+    const width = clamp(height * sprite.naturalWidth / sprite.naturalHeight, 12, VIEW_W * 0.7);
+    const cx = projection.x;
+    const baseY = projection.groundY;
+    ctx.save();
+    ctx.globalAlpha = clamp(1.35 - projection.depth / 2200, 0.5, 1);
+    ctx.fillStyle = "rgba(14,20,12,.42)";
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY + 3, width * 0.48, Math.max(3, height * 0.1), 0, 0, TAU);
+    ctx.fill();
+    if (selection.mirror) {
+      ctx.translate(cx, baseY);
+      ctx.scale(-1, 1);
+      ctx.drawImage(sprite, -width / 2, -height, width, height);
+    } else {
+      ctx.drawImage(sprite, cx - width / 2, baseY - height, width, height);
+    }
+    ctx.restore();
+
+    const muzzleWorldX = enemy.x + Math.cos(enemy.turretAngle) * enemy.type.barrelLength;
+    const muzzleWorldY = enemy.y + Math.sin(enemy.turretAngle) * enemy.type.barrelLength;
+    const muzzle = projectWorld(muzzleWorldX, muzzleWorldY, 43);
+    if (muzzle) {
+      ctx.strokeStyle = "rgba(36,38,30,.86)";
+      ctx.lineWidth = clamp(8 * projection.scale, 2, 8);
+      ctx.beginPath();
+      ctx.moveTo(cx, baseY - height * 0.66);
+      ctx.lineTo(muzzle.x, muzzle.y);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(225,208,151,.64)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, baseY - height * 0.68);
+      ctx.lineTo(muzzle.x, muzzle.y - 1);
+      ctx.stroke();
+      ctx.fillStyle = "#171a15";
+      ctx.beginPath();
+      ctx.arc(muzzle.x, muzzle.y, clamp(4 * projection.scale, 2, 6), 0, TAU);
+      ctx.fill();
+    }
+    if (enemy.hitFlash > 0) {
+      ctx.fillStyle = "rgba(255,239,174," + clamp(enemy.hitFlash * 0.35, 0, 0.35) + ")";
+      ctx.fillRect(cx - width / 2, baseY - height, width, height);
+    }
+    ctx.fillStyle = "rgba(231,185,96,.9)";
+    ctx.beginPath();
+    ctx.arc(cx, baseY - height - 12, 5, 0, TAU);
+    ctx.fill();
+    if (enemy.hp < enemy.maxHp) {
+      const p = enemy.hp / enemy.maxHp;
+      ctx.fillStyle = "rgba(10,14,9,.74)";
+      ctx.fillRect(cx - width * 0.44, baseY - height - 25, width * 0.88, 6);
+      ctx.fillStyle = p > 0.5 ? "#d9c66b" : "#e07354";
+      ctx.fillRect(cx - width * 0.44, baseY - height - 25, width * 0.88 * p, 6);
+    }
   };
 
   const drawWorldEffects = () => {
@@ -1623,7 +1769,7 @@
       ctx.fillStyle = "#e8f0bd";
       ctx.font = "700 12px -apple-system,'PingFang SC',sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("虎式固定炮台 · " + Math.round(p.distance / 10) + " m", cx, cy + 51);
+      ctx.fillText("虎式固定炮台 · " + Math.round(p.distance) + " m", cx, cy + 51);
       ctx.textAlign = "left";
     }
     if (hitMarker > 0) {
@@ -1753,6 +1899,56 @@
     setText("menu-wins", String(data.stats.wins || 0));
   };
 
+  const preloadArtAssets = () => {
+    for (const [tankId, views] of Object.entries(D.TANK_ART || {})) {
+      for (const view of ["front", "side", "rear"]) tankImage(tankId, view);
+    }
+    for (const [type, art] of Object.entries(D.COVER_ART || {})) {
+      if (art.normal) {
+        const image = new Image();
+        image.src = art.normal;
+        coverImages.set(type + ":" + art.normal, image);
+      }
+      if (art.variants) {
+        for (const src of Object.values(art.variants)) {
+          const image = new Image();
+          image.src = src;
+          coverImages.set(type + ":" + src, image);
+        }
+      }
+    }
+    for (const id of Object.keys(D.BACKDROPS || {})) backdropImage(id);
+  };
+
+  const renderGallery = () => {
+    const grid = $("tank-gallery-grid");
+    if (grid) {
+      grid.innerHTML = (D.TANK_CATALOG || []).map((tank) =>
+        '<article class="tank-card">' +
+          '<img src="' + tank.art + '" alt="' + tank.name + '" loading="lazy">' +
+          '<div class="tank-card-copy"><strong>' + tank.name + "</strong><b>" + tank.status + "</b><span>" + tank.role + "</span></div>" +
+        "</article>"
+      ).join("");
+    }
+    const options = $("backdrop-options");
+    if (options) {
+      options.innerHTML = Object.entries(D.BACKDROPS || {}).map(([id, item]) =>
+        '<button class="backdrop-chip' + (id === selectedBackdrop ? " active" : "") +
+        '" type="button" data-backdrop="' + id + '">' + item.label + "</button>"
+      ).join("");
+      options.querySelectorAll("[data-backdrop]").forEach((button) => {
+        button.addEventListener("click", () => {
+          selectedBackdrop = button.dataset.backdrop || "europe";
+          try {
+            localStorage.setItem("dbtank-backdrop-v1", selectedBackdrop);
+          } catch (e) {}
+          backdropImage(selectedBackdrop);
+          renderGallery();
+        });
+      });
+    }
+  };
+
   const showToast = (message, duration = 2600) => {
     const toast = $("toast");
     if (!toast) return;
@@ -1788,6 +1984,7 @@
     setOverlay("menu", true);
     setOverlay("pause-modal", false);
     setOverlay("result-modal", false);
+    setOverlay("gallery-modal", false);
     updateMobileControls();
     updateMenuStats();
     updateHud();
@@ -1811,6 +2008,7 @@
     setOverlay("pause-modal", false);
     setOverlay("result-modal", false);
     setOverlay("time-lock", false);
+    setOverlay("gallery-modal", false);
     if (!COARSE_POINTER && canvas.requestPointerLock) {
       const pending = canvas.requestPointerLock();
       if (pending && pending.catch) pending.catch(() => {});
@@ -1948,7 +2146,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=6").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=7").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2003,6 +2201,11 @@
     $("btn-pause-menu")?.addEventListener("click", showMenu);
     $("btn-retry")?.addEventListener("click", startBattle);
     $("btn-result-menu")?.addEventListener("click", showMenu);
+    $("btn-gallery")?.addEventListener("click", () => {
+      renderGallery();
+      setOverlay("gallery-modal", true);
+    });
+    $("btn-gallery-close")?.addEventListener("click", () => setOverlay("gallery-modal", false));
     $("btn-refresh")?.addEventListener("click", refreshApp);
     $("btn-mute")?.addEventListener("click", () => {
       muted = !muted;
@@ -2065,6 +2268,12 @@
     bindUi();
     bindInstall();
     registerSw();
+    try {
+      const storedBackdrop = localStorage.getItem("dbtank-backdrop-v1");
+      if (storedBackdrop && D.BACKDROPS[storedBackdrop]) selectedBackdrop = storedBackdrop;
+    } catch (e) {}
+    preloadArtAssets();
+    renderGallery();
     setText("app-version", APP_VERSION);
     setText("btn-mute", muted ? "🔇" : "🔊");
     resetBattle();
@@ -2126,8 +2335,12 @@
       })),
       visibleEnemyIds: visibleEnemies().map((enemy) => enemy.id),
       threatCompassCount: enemies.length,
+      enemyRange: B.enemyRange,
+      playerRange: B.playerRange,
       enemyCount: enemies.length,
       bullets: bullets.length,
+      backdrop: selectedBackdrop,
+      backdropReady: !!backdropImage(selectedBackdrop),
       kills,
       score,
       obstacles: obstacles.map((obstacle) => ({ type: obstacle.type, hp: obstacle.hp, destroyed: obstacle.destroyed }))
@@ -2168,6 +2381,24 @@
       const enemy = enemies.find((item) => item.id === id);
       const p = enemy ? projectedEnemy(enemy) : null;
       return p ? { x: p.x, y: p.y, width: p.width, height: p.height, depth: p.depth, scale: p.scale } : null;
+    },
+    enemySpriteView: (id) => {
+      const enemy = enemies.find((item) => item.id === id);
+      return enemy ? enemySpriteView(enemy) : null;
+    },
+    enemySpriteReady: (id) => {
+      const enemy = enemies.find((item) => item.id === id);
+      if (!enemy) return false;
+      const selection = enemySpriteView(enemy);
+      return !!tankImage(enemy.type.artId, selection.view);
+    },
+    enemySpriteViewAt: (id, x, y) => {
+      const enemy = enemies.find((item) => item.id === id);
+      return enemy ? enemySpriteViewFor(enemy, x, y) : null;
+    },
+    enemyInRange: (id) => {
+      const enemy = enemies.find((item) => item.id === id);
+      return !!(enemy && player && distanceBetween(enemy, player) <= B.enemyRange);
     },
     visibleEnemyIds: () => visibleEnemies().map((enemy) => enemy.id),
     destroyFirstObstacle: () => {

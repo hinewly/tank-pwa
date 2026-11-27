@@ -1,0 +1,271 @@
+{
+  "generated": "tools/process-vidu-assets.py",
+  "source": "art-source/vidu",
+  "totalBytes": 1424184,
+  "assets": [
+    {
+      "path": "assets/tanks/cn-99a-front.webp",
+      "width": 574,
+      "height": 476,
+      "bytes": 30448,
+      "sha256": "e9b76ed36473d515e8084e58f91560ad4681593c07c0e3fc33b2cada98b13908",
+      "source": "art-source/vidu/中国99A坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/cn-99a-side.webp",
+      "width": 760,
+      "height": 409,
+      "bytes": 42898,
+      "sha256": "fecf0a0f2c7197ec019a4c936d6fc70a408fdcb809fea69d9823764017fb9453",
+      "source": "art-source/vidu/中国99A坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/cn-99a-rear.webp",
+      "width": 498,
+      "height": 476,
+      "bytes": 26596,
+      "sha256": "730c3743c4605182d2ea51fc8be376eff9e4e8c87d2df1e8ac3e966fdba10db7",
+      "source": "art-source/vidu/中国99A坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/ru-t90-front.webp",
+      "width": 569,
+      "height": 444,
+      "bytes": 34528,
+      "sha256": "3c7887d56d8b57b964c872655c5046163effa5923a92e3684bba67062c3f6938",
+      "source": "art-source/vidu/俄罗斯T-90坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/ru-t90-side.webp",
+      "width": 760,
+      "height": 409,
+      "bytes": 43372,
+      "sha256": "529091af0385f87649c97f0387c5d9db01e7ae591e05a32f1eec4804f85efa9b",
+      "source": "art-source/vidu/俄罗斯T-90坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/ru-t90-rear.webp",
+      "width": 482,
+      "height": 448,
+      "bytes": 27780,
+      "sha256": "d005fe7eae17b9bf6f76e59db56d34b404b16f308d0f357a28190a9f57744419",
+      "source": "art-source/vidu/俄罗斯T-90坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-m1a2-front.webp",
+      "width": 618,
+      "height": 457,
+      "bytes": 38666,
+      "sha256": "d09b1c9fe3eb72bb7f78e2657e063cd519e536afeb550d3cc534249c8c255a50",
+      "source": "art-source/vidu/美国M1A2坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-m1a2-side.webp",
+      "width": 760,
+      "height": 382,
+      "bytes": 49516,
+      "sha256": "b1842693b355c8d9564238691404ecbf02ec27847c925a2fb3e03566fcff2233",
+      "source": "art-source/vidu/美国M1A2坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-m1a2-rear.webp",
+      "width": 475,
+      "height": 458,
+      "bytes": 31232,
+      "sha256": "d200df3a5dee7f8d3a80b6b771f5a2c2ecf54d8f82bdec784ab8e642c440b800",
+      "source": "art-source/vidu/美国M1A2坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/jp-type97-front.webp",
+      "width": 587,
+      "height": 419,
+      "bytes": 42840,
+      "sha256": "c184900be3a1ce0665fcb1e2d79138a4dbaf349f55b276aa99b9559323113252",
+      "source": "art-source/vidu/日本97式坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/jp-type97-side.webp",
+      "width": 760,
+      "height": 398,
+      "bytes": 62610,
+      "sha256": "f417fb81d842532d0e68266b2861f586c24f570c26b9ae933e7f9ad88b9f24a5",
+      "source": "art-source/vidu/日本97式坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/jp-type97-rear.webp",
+      "width": 544,
+      "height": 418,
+      "bytes": 39322,
+      "sha256": "c72f51ebb37933e978d131964eeee7e9de1cc67947a37c1cfcc4c59ae2a57c6d",
+      "source": "art-source/vidu/日本97式坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-sherman-front.webp",
+      "width": 508,
+      "height": 400,
+      "bytes": 39808,
+      "sha256": "f1525082c9c44305455384ea6c74a2621d16c592a7dc7cfe3c8e5b8bc20ad827",
+      "source": "art-source/vidu/美国谢尔曼坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-sherman-side.webp",
+      "width": 723,
+      "height": 361,
+      "bytes": 48750,
+      "sha256": "4eeb3a59da91a3e3bf311e41866a10d3e6b906c78ba0a07ef9508e52c52c22a8",
+      "source": "art-source/vidu/美国谢尔曼坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/us-sherman-rear.webp",
+      "width": 665,
+      "height": 425,
+      "bytes": 48522,
+      "sha256": "be69581a96926a04fc417f7a9736c09f8e71bd89a48d6f0cce4fea6b12f061a5",
+      "source": "art-source/vidu/美国谢尔曼坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/de-tiger-front.webp",
+      "width": 572,
+      "height": 349,
+      "bytes": 38846,
+      "sha256": "3455d72a1f0430279b77bd549ce171df7322feff1dd5a72e5f647b28acca8da9",
+      "source": "art-source/vidu/德国虎式坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/de-tiger-side.webp",
+      "width": 760,
+      "height": 318,
+      "bytes": 52860,
+      "sha256": "41b6e2735ab006e7cd6c922927476ce804bfa87fc35d2f88ce9d6ee51d43356a",
+      "source": "art-source/vidu/德国虎式坦克-三视图.png"
+    },
+    {
+      "path": "assets/tanks/de-tiger-rear.webp",
+      "width": 546,
+      "height": 342,
+      "bytes": 35946,
+      "sha256": "e86f33269fe5753339fdc3313273e721d35ea2be9228e3a09d26d6f2374ec77e",
+      "source": "art-source/vidu/德国虎式坦克-三视图.png"
+    },
+    {
+      "path": "assets/covers/concrete.webp",
+      "width": 333,
+      "height": 230,
+      "bytes": 14998,
+      "sha256": "5786af9d05c910efed7ae15265725cf1e7416a48a1ca890ec7aea2581f3c7e30",
+      "source": "art-source/vidu/战场掩体四类图集.webp"
+    },
+    {
+      "path": "assets/covers/sandbag.webp",
+      "width": 326,
+      "height": 215,
+      "bytes": 18146,
+      "sha256": "92c797c9b139a468aade9e57faf96a75b1b0bf795769c1fd517f3cefb6218d94",
+      "source": "art-source/vidu/战场掩体四类图集.webp"
+    },
+    {
+      "path": "assets/covers/wood.webp",
+      "width": 323,
+      "height": 244,
+      "bytes": 22972,
+      "sha256": "239ace66825a0c701a9dfe30460e0fe1ae4ece62cabc91bdbd3ea605589e0059",
+      "source": "art-source/vidu/战场掩体四类图集.webp"
+    },
+    {
+      "path": "assets/covers/earth.webp",
+      "width": 354,
+      "height": 230,
+      "bytes": 25598,
+      "sha256": "be4cdd99e823065807c802d9380f54d4e8f1c1af96fd9ac11b61fa2ce2476b91",
+      "source": "art-source/vidu/战场掩体四类图集.webp"
+    },
+    {
+      "path": "assets/cover-variants/stone-wall.webp",
+      "width": 320,
+      "height": 247,
+      "bytes": 19378,
+      "sha256": "f8430ce5bcf200d5a3cd71b5d9b5572204dd95b96041934d1c585a0f5c415553",
+      "source": "art-source/vidu/战场物件第二组.webp"
+    },
+    {
+      "path": "assets/cover-variants/sandbag-fort.webp",
+      "width": 330,
+      "height": 152,
+      "bytes": 16086,
+      "sha256": "41c726ec80d1c2df7a94fb14944c7ea6dd5753897a070cee70bc6a1a3b18038b",
+      "source": "art-source/vidu/战场物件第二组.webp"
+    },
+    {
+      "path": "assets/cover-variants/fallen-log.webp",
+      "width": 330,
+      "height": 223,
+      "bytes": 27300,
+      "sha256": "c8651d70f60d76574f245212898bb411745da2a3f1fdf67519d9f2825fa30ed6",
+      "source": "art-source/vidu/战场物件第二组.webp"
+    },
+    {
+      "path": "assets/cover-variants/wreck-alt.webp",
+      "width": 345,
+      "height": 210,
+      "bytes": 20636,
+      "sha256": "810c343b63a25c86d9838568630d6fd431925b099df91684c8f1f030bb7139b3",
+      "source": "art-source/vidu/战场物件第二组.webp"
+    },
+    {
+      "path": "assets/wrecks/tank-wreck-front.webp",
+      "width": 463,
+      "height": 358,
+      "bytes": 33658,
+      "sha256": "024fa388eb4c9ef16e91a15d1e06c166c51e2c173578cb05c1a7956cec8fec55",
+      "source": "art-source/vidu/二战坦克残骸图集.webp"
+    },
+    {
+      "path": "assets/wrecks/tank-wreck-side.webp",
+      "width": 435,
+      "height": 380,
+      "bytes": 32292,
+      "sha256": "66a770b80936f2b7cee8d0256d837e64c9324173e88001615b72b53f7d8e0633",
+      "source": "art-source/vidu/二战坦克残骸图集.webp"
+    },
+    {
+      "path": "assets/wrecks/tank-wreck-rear.webp",
+      "width": 440,
+      "height": 331,
+      "bytes": 28426,
+      "sha256": "d0c9839e622d3c6c7bd775b84b291dfb63dd3a2f50dbbc3b633f2e5e41504b27",
+      "source": "art-source/vidu/二战坦克残骸图集.webp"
+    },
+    {
+      "path": "assets/backdrops/europe.webp",
+      "width": 1360,
+      "height": 771,
+      "bytes": 115526,
+      "sha256": "802af9cd12e65f69d21c921b121f56dda018e514ddc720541ac0341aab40ad99",
+      "source": "art-source/vidu/欧洲战场远景全景.webp"
+    },
+    {
+      "path": "assets/backdrops/open-plain.webp",
+      "width": 1360,
+      "height": 771,
+      "bytes": 74836,
+      "sha256": "9cf682bea4e77a6daf869e347a254a1bb2cc63597e9b915f69df264c96128efa",
+      "source": "art-source/vidu/开阔平原远景全景.webp"
+    },
+    {
+      "path": "assets/backdrops/desert.webp",
+      "width": 1360,
+      "height": 771,
+      "bytes": 122536,
+      "sha256": "c2f91018c6b3a1c70e42501a71c070af2ebde1f03d9169b11826ed01f7150234",
+      "source": "art-source/vidu/沙石荒漠远景全景.webp"
+    },
+    {
+      "path": "assets/backdrops/sparse-forest.webp",
+      "width": 1524,
+      "height": 687,
+      "bytes": 117256,
+      "sha256": "301268377900d3aca43739fb828b973d8470926810f610dd8ffa602a53fb1508",
+      "source": "art-source/vidu/稀疏林地远景全景.webp"
+    }
+  ]
+}

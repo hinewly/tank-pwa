@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=6">
+  <link rel="manifest" href="manifest.json?v=7">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.2.2</span>
+      <span class="version-badge" id="app-version">v0.3.0</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -143,6 +143,7 @@
               <div><span>胜利次数</span><strong id="menu-wins">0</strong></div>
             </div>
           </div>
+          <button id="btn-gallery" class="gallery-open" type="button">六款坦克图鉴 · 战场远景</button>
           <div class="sync-line"><span class="sync-dot"></span><span id="sync-status">本机存档 · 登录后云同步</span></div>
         </div>
       </div>
@@ -167,6 +168,23 @@
           <div class="modal-actions">
             <button id="btn-retry" class="primary-btn" type="button">再战一局</button>
             <button id="btn-result-menu" class="secondary-btn" type="button">返回主菜单</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="gallery-modal" class="overlay hidden">
+        <div class="modal-panel gallery-panel">
+          <div class="gallery-head">
+            <div>
+              <div class="modal-eyebrow">ARMORED VEHICLE ARCHIVE</div>
+              <h2>六款坦克与战场远景</h2>
+            </div>
+            <button id="btn-gallery-close" class="gallery-close" type="button" aria-label="关闭图鉴">✕</button>
+          </div>
+          <div id="tank-gallery-grid" class="tank-gallery-grid"></div>
+          <div class="backdrop-picker">
+            <span>战场远景</span>
+            <div id="backdrop-options"></div>
           </div>
         </div>
       </div>
@@ -232,9 +250,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=6"></script>
-  <script src="sync.js?v=6"></script>
-  <script src="game.js?v=6"></script>
+  <script src="data.js?v=7"></script>
+  <script src="sync.js?v=7"></script>
+  <script src="game.js?v=7"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {

@@ -11,7 +11,8 @@ window.TankData = (() => {
     magazineSize: 5,
     playerReload: 2.25,
     enemyReload: 3.05,
-    enemyRange: 920,
+    enemyRange: 800,
+    playerRange: 800,
     enemyAimBias: 0.035,
     fireCooldown: 0.16,
     bulletSpeed: 980,
@@ -28,6 +29,7 @@ window.TankData = (() => {
       id: "type99a",
       label: "99A 主战坦克",
       side: "cn",
+      artId: "cn-99a",
       hullLength: 62,
       hullWidth: 42,
       turretLength: 23,
@@ -53,6 +55,7 @@ window.TankData = (() => {
       id: "tiger",
       label: "虎式重型坦克",
       side: "enemy",
+      artId: "de-tiger",
       hullLength: 66,
       hullWidth: 46,
       turretLength: 24,
@@ -90,7 +93,7 @@ window.TankData = (() => {
     { x: 1380, y: 500, w: 60, h: 150, type: "concrete" },
     { x: 760, y: 850, w: 60, h: 150, type: "concrete" },
     { x: 1380, y: 850, w: 60, h: 150, type: "concrete" },
-    { x: 560, y: 720, w: 120, h: 60, type: "concrete" },
+    { x: 560, y: 720, w: 120, h: 60, type: "concrete", artVariant: "stone" },
     { x: 1520, y: 720, w: 120, h: 60, type: "concrete" },
 
     // 内圈木障会被持续炮火打穿，逼玩家换位。
@@ -100,7 +103,7 @@ window.TankData = (() => {
     { x: 1210, y: 860, w: 130, h: 40, type: "wood" },
     { x: 620, y: 520, w: 120, h: 40, type: "wood" },
     { x: 1460, y: 520, w: 120, h: 40, type: "wood" },
-    { x: 620, y: 940, w: 120, h: 40, type: "wood" },
+    { x: 620, y: 940, w: 120, h: 40, type: "wood", artVariant: "fallen" },
     { x: 1460, y: 940, w: 120, h: 40, type: "wood" },
     { x: 1280, y: 400, w: 110, h: 42, type: "wood" },
     { x: 1280, y: 1058, w: 110, h: 42, type: "wood" },
@@ -114,7 +117,7 @@ window.TankData = (() => {
     { x: 980, y: 1004, w: 240, h: 36, type: "sandbag" },
     { x: 700, y: 450, w: 120, h: 36, type: "sandbag" },
     { x: 1380, y: 450, w: 120, h: 36, type: "sandbag" },
-    { x: 700, y: 1014, w: 120, h: 36, type: "sandbag" },
+    { x: 700, y: 1014, w: 120, h: 36, type: "sandbag", artVariant: "fort" },
     { x: 1380, y: 1014, w: 120, h: 36, type: "sandbag" },
     { x: 500, y: 520, w: 36, h: 120, type: "sandbag" },
     { x: 1664, y: 520, w: 36, h: 120, type: "sandbag" },
@@ -188,13 +191,86 @@ window.TankData = (() => {
     }
   };
 
-  // 后续原创 PNG/WebP 素材接入点。保持空字符串时使用当前 Canvas 矢量 fallback。
+  // 正式素材。图片异常时游戏回退到 Canvas 矢量绘制。
   const COVER_ART = {
-    concrete: { normal: "", damaged: "", aspect: 1.9 },
-    sandbag: { normal: "", damaged: "", aspect: 2.2 },
-    wood: { normal: "", damaged: "", aspect: 2.0 },
-    earth: { normal: "", damaged: "", aspect: 2.1 },
-    wreck: { normal: "", damaged: "", aspect: 1.65 }
+    concrete: {
+      normal: "assets/covers/concrete.webp",
+      damaged: "",
+      aspect: 1.9,
+      variants: { stone: "assets/cover-variants/stone-wall.webp" }
+    },
+    sandbag: {
+      normal: "assets/covers/sandbag.webp",
+      damaged: "",
+      aspect: 2.0,
+      variants: { fort: "assets/cover-variants/sandbag-fort.webp" }
+    },
+    wood: {
+      normal: "assets/covers/wood.webp",
+      damaged: "",
+      aspect: 1.85,
+      variants: { fallen: "assets/cover-variants/fallen-log.webp" }
+    },
+    earth: { normal: "assets/covers/earth.webp", damaged: "", aspect: 2.0 },
+    wreck: {
+      normal: "assets/wrecks/tank-wreck-side.webp",
+      damaged: "",
+      aspect: 1.9,
+      variants: {
+        front: "assets/wrecks/tank-wreck-front.webp",
+        rear: "assets/wrecks/tank-wreck-rear.webp",
+        alt: "assets/cover-variants/wreck-alt.webp"
+      }
+    }
+  };
+
+  const TANK_ART = {
+    "cn-99a": {
+      front: "assets/tanks/cn-99a-front.webp",
+      side: "assets/tanks/cn-99a-side.webp",
+      rear: "assets/tanks/cn-99a-rear.webp"
+    },
+    "ru-t90": {
+      front: "assets/tanks/ru-t90-front.webp",
+      side: "assets/tanks/ru-t90-side.webp",
+      rear: "assets/tanks/ru-t90-rear.webp"
+    },
+    "us-m1a2": {
+      front: "assets/tanks/us-m1a2-front.webp",
+      side: "assets/tanks/us-m1a2-side.webp",
+      rear: "assets/tanks/us-m1a2-rear.webp"
+    },
+    "jp-type97": {
+      front: "assets/tanks/jp-type97-front.webp",
+      side: "assets/tanks/jp-type97-side.webp",
+      rear: "assets/tanks/jp-type97-rear.webp"
+    },
+    "us-sherman": {
+      front: "assets/tanks/us-sherman-front.webp",
+      side: "assets/tanks/us-sherman-side.webp",
+      rear: "assets/tanks/us-sherman-rear.webp"
+    },
+    "de-tiger": {
+      front: "assets/tanks/de-tiger-front.webp",
+      side: "assets/tanks/de-tiger-side.webp",
+      rear: "assets/tanks/de-tiger-rear.webp"
+    }
+  };
+
+  const TANK_CATALOG = [
+    { id: "cn-99a", name: "中国 99A", role: "我方", status: "当前主战", art: "assets/tanks/cn-99a-front.webp" },
+    { id: "ru-t90", name: "俄罗斯 T-90", role: "我方", status: "后续可选", art: "assets/tanks/ru-t90-front.webp" },
+    { id: "us-m1a2", name: "美国 M1A2", role: "我方", status: "后续可选", art: "assets/tanks/us-m1a2-front.webp" },
+    { id: "de-tiger", name: "德国虎式", role: "敌方", status: "当前对手", art: "assets/tanks/de-tiger-front.webp" },
+    { id: "us-sherman", name: "美国谢尔曼", role: "敌方", status: "后续可选", art: "assets/tanks/us-sherman-front.webp" },
+    { id: "jp-type97", name: "日本 97 式", role: "敌方", status: "后续可选", art: "assets/tanks/jp-type97-front.webp" }
+  ];
+
+  const BACKDROPS = {
+    europe: { label: "欧洲战场", src: "assets/backdrops/europe.webp" },
+    plain: { label: "开阔平原", src: "assets/backdrops/open-plain.webp" },
+    desert: { label: "沙石荒漠", src: "assets/backdrops/desert.webp" },
+    forest: { label: "稀疏林地", src: "assets/backdrops/sparse-forest.webp" }
   };
 
   const cloneObstacles = () => OBSTACLES.map((o) => ({ ...o }));
@@ -206,6 +282,9 @@ window.TankData = (() => {
     WORLD,
     OBSTACLE_TYPES,
     COVER_ART,
+    TANK_ART,
+    TANK_CATALOG,
+    BACKDROPS,
     cloneObstacles,
     cloneSpawns
   };
