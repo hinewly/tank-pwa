@@ -1,7 +1,7 @@
 # 坦克对战：钢铁代差 交接
 
-- last_updated: 2026-11-27 22:45
-- status: active（v0.4.1 本地验收完成，待同步国内目录）
+- last_updated: 2026-11-27 22:43
+- status: active（v0.4.1 国内目录已上线，待用户试玩）
 - version: v0.4.1
 
 ## 任务目标
@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-本轮继续修正快速装填、驾驶灵活性和声音链路：99A 改为 0.8 秒自动装填，新增 Q/E 横移与更快的加速/转向，补充发动机音并加入音频运行自检。PC/手机、实弹 10/10 清场、云同步、离线和 PWA 本地回归均已通过；提交后将同步国内目录。
+本轮继续修正快速装填、驾驶灵活性和声音链路：99A 改为 0.8 秒自动装填，新增 Q/E 横移与更快的加速/转向，补充发动机音并加入音频运行自检。PC/手机、实弹 10/10 清场、云同步、离线和 PWA 本地及线上回归均已通过。
 
 ## 已确认基线
 
@@ -127,9 +127,9 @@
 
 ## 国内部署
 
-- 最新部署验证：2026-11-27 22:04（Asia/Shanghai）
+- 最新部署验证：2026-11-27 22:43（Asia/Shanghai）
 - 初次目录上线：2026-11-27 19:57
-- 最新部署提交：`a74b700`（`v0.4.0`）
+- 最新部署提交：`5409f7f`（`v0.4.1`）
 - Webroot：`/opt/tank-pwa/public/`
 - Caddy 路由：根域 `/tank` → 308 `/tank/`；`/tank/*` → `/opt/tank-pwa/public`
 - Caddy 备份：`/etc/caddy/Caddyfile.bak-tank-20261127-195549`
@@ -137,14 +137,16 @@
 - 新配置 SHA-256：`0b57c638cd5a46ffe18059161ab750c9349d294e80418078462924d669fa75f8`
 - 候选配置和安装后配置均通过 `caddy validate`，reload 后服务 `active`
 - `/api/health`、`/portal.js`、`/picks/` 仍返回原主站服务响应；DNS、首页入口、海外均未改
-- 线上 `/tank/`、`style.css?v=9`、`data.js?v=9`、`game.js?v=9`、manifest、SW 与 34 个运行素材全部 200；素材 SHA-256 与清单一致
+- 线上 `/tank/`、`style.css?v=10`、`data.js?v=10`、`game.js?v=10`、manifest、SW 与 34 个运行素材全部 200；素材 SHA-256 与清单一致
 - HTML 为 `text/html; charset=utf-8` / `Cache-Control: no-cache`；SW 为 `no-cache` 并返回 `Service-Worker-Allowed: /tank/`
 - 真实 Chromium 线上 E2E：单发主炮、10 辆固定虎式、360° 环视、炮塔遮罩、1.7× 炮长镜、开火命中、掩体、图鉴、四远景、800m 限制、战术雷达均通过
-- 线上移动：PC 前进 `130.91`、HUD“前进 88%”、位移约 `94.79`；手机 HUD“前进 71%”、位移约 `40.93`、左摇杆常驻
-- 线上新手实弹：不下调玩家血量，自动驾驶员击毁 3 辆后仍存活；独立完整跑局 10/10 通关
+- 线上移动：PC 前进速度 `190`、HUD“前进 100%”、位移约 `114.54`；手机 HUD“前进 84%”、位移约 `58.81`、左摇杆常驻
+- 线上 Q/E：620ms 内横移约 `42.37`，横移速度 `92`，HUD“右移 100%”
+- 线上音频：AudioContext 为 `running`、静音为 `false`、发动机声已激活
+- 线上新手实弹：不下调玩家血量，自动驾驶员击毁 3 辆后仍存活；独立完整跑局 10/10、19 发、剩余装甲 165
 - portal：登录/注册胶囊显示游客剩 9 分；`/api/time?app=tank` 与 heartbeat 均 200
 - 未登录云接口返回预期 JSON 401（`{"error":"未登录"}`），没有静态资源 4xx/5xx，也没有未捕获脚本异常
-- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v9`、35 个 `/assets/` 缓存项、炮塔图已缓存；断网重载进入菜单且 canvas/炮塔图可用
+- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v10`、35 个 `/assets/` 缓存项、炮塔图已缓存；断网重载进入菜单且 canvas/炮塔图可用
 - 线上截图：`_temp-screenshots/2026-11/坦克对战/线上-PC端-*.png`、`线上-手机横屏-*.png`、`线上-手机竖屏-*.png`
 
 ## 版本
