@@ -383,7 +383,7 @@ async function run() {
     await desktop.waitForTimeout(120);
     const aimCombatStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     await desktop.keyboard.down("s");
-    await desktop.waitForTimeout(180);
+    await desktop.waitForTimeout(360);
     await desktop.keyboard.up("s");
     await desktop.evaluate((target) => window.__tankTest.aimAt(target.x, target.y), projectionTarget);
     await desktop.evaluate(() => window.__tankTest.fire());
