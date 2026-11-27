@@ -11,7 +11,7 @@ DaoBox 正式娱乐子程序。首版是 99A 炮塔/车长第一人称视角的�
 - PWA scope：`/tank/`
 - Service Worker 缓存前缀：`dbtank-`
 
-正式部署暂缓，需用户确认后接入 Caddy 静态目录，不改 DNS。
+国内版已通过 Caddy 静态目录上线。根域仅新增 `/tank` 与 `/tank/*` 路由，不占主站 API、`portal.js` 或 `/picks/*`；未改 DNS，未加首页入口，未部署海外。
 
 ## 本地运行
 

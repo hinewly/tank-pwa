@@ -1,7 +1,7 @@
 # 坦克对战：钢铁代差 交接
 
-- last_updated: 2026-11-27 19:44
-- status: active（第一人称十面合围首版完成，正式部署待用户确认）
+- last_updated: 2026-11-27 20:01
+- status: active（国内目录已上线，待用户验收）
 - version: v0.3.1
 
 ## 任务目标
@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-首版已完成第一人称 2.5D 重写与 99A 正式炮长位遮罩接入，并通过 PC、手机、360° 环视、固定炮台、真实弹道、云同步、离线和 PWA 自动化验收。tank 站点未部署，首页入口、Caddy、DNS 均未改。
+首版已完成第一人称 2.5D 重写与 99A 正式炮长位遮罩接入，并通过 PC、手机、360° 环视、固定炮台、真实弹道、云同步、离线和 PWA 自动化验收。国内版已部署到 `https://daobox.net.cn/tank/`；首页入口和 DNS 未改，海外未部署。
 
 ## 已确认基线
 
@@ -104,6 +104,25 @@
 - portal.js 与账号 API 全部中断时，游戏仍在约 1.3 秒内进入菜单。
 - 域名自检通过，`tank-pwa` 已纳入 DB_HOME 检查。
 
+## 国内部署
+
+- 上线时间：2026-11-27 19:57（Asia/Shanghai）
+- 部署提交：`0d789bb`（`v0.3.1`）
+- Webroot：`/opt/tank-pwa/public/`
+- Caddy 路由：根域 `/tank` → 308 `/tank/`；`/tank/*` → `/opt/tank-pwa/public`
+- Caddy 备份：`/etc/caddy/Caddyfile.bak-tank-20261127-195549`
+- 备份 SHA-256：`4cd6a153efca8acfb2e714ae2fc6cfe42523f9aaf6e75a06b857d16b1436b1e8`
+- 新配置 SHA-256：`0b57c638cd5a46ffe18059161ab750c9349d294e80418078462924d669fa75f8`
+- 候选配置和安装后配置均通过 `caddy validate`，reload 后服务 `active`
+- `/api/health`、`/portal.js`、`/picks/` 仍返回原主站服务响应；DNS、首页入口、海外均未改
+- 线上 `/tank/`、关键 JS/CSS/manifest/SW 与 34 个运行素材全部 200；素材 SHA-256 与清单一致
+- HTML 为 `text/html; charset=utf-8` / `Cache-Control: no-cache`；SW 为 `no-cache` 并返回 `Service-Worker-Allowed: /tank/`
+- 真实 Chromium 线上 E2E：10 辆固定虎式、360° 环视、炮塔遮罩、1.7× 炮长镜、开火命中、掩体、图鉴、四远景、800m 限制均通过
+- portal：登录/注册胶囊显示游客剩 9 分；`/api/time?app=tank` 与 heartbeat 均 200
+- 未登录云接口返回预期 JSON 401（`{"error":"未登录"}`），没有静态资源 4xx/5xx，也没有未捕获脚本异常
+- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v8`、35 个 `/assets/` 缓存项、炮塔图已缓存；断网重载进入菜单且 canvas/炮塔图可用
+- 线上截图：`_temp-screenshots/2026-11/坦克对战/线上-PC端-*.png`、`线上-手机横屏-*.png`、`线上-手机竖屏-*.png`
+
 ## 版本
 
 - App：`v0.3.1`
@@ -114,7 +133,7 @@
 
 - [ ] 用户试玩验收：第一人称投影观感、炮塔 yaw 速度、近距离目标比例、10 炮台压力与地图安全角。
 - [ ] 真机验收：Android/iPhone 横屏双摇杆、独立开火键、安装到桌面、弱网。
-- [ ] 正式部署需用户确认：Caddy `/tank/` 静态映射和线上 E2E。
+- [x] 国内 Caddy `/tank/` 静态映射、线上资源与真实浏览器 E2E。
 - [ ] 首页入口需用户确认；本阶段未改首页。
 - [ ] 后续可评估真实 3D、动态地形和多地图，但不得破坏当前零依赖约束而未获批准。
 
