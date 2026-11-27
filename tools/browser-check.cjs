@@ -141,12 +141,33 @@ async function run() {
     await desktop.click("#btn-start");
     await desktop.waitForTimeout(500);
     const canvasBox = await desktop.locator("#game").boundingBox();
+    const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
+    report.cockpit = { base: cockpitBase };
     if (shotDir) {
       await desktop.screenshot({
         path: path.join(shotDir, "PC端-第一人称战斗-20261127.png"),
         fullPage: true
       });
     }
+    await desktop.evaluate(() => window.__tankTest.fire());
+    await desktop.waitForTimeout(35);
+    const cockpitFlash = await desktop.evaluate(() => ({
+      snapshot: window.__tankTest.getSnapshot(),
+      cockpit: window.__tankTest.cockpitInfo()
+    }));
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-第一人称炮口焰-20261127.png"),
+        fullPage: true
+      });
+    }
+    report.cockpit.flash = {
+      active: cockpitFlash.snapshot.cockpitMuzzleFlash > 0,
+      muzzleX: cockpitFlash.cockpit.muzzleX,
+      muzzleY: cockpitFlash.cockpit.muzzleY
+    };
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(100);
     const outOfRangeStart = await desktop.evaluate(() => {
       const snapshot = window.__tankTest.getSnapshot();
       const target = snapshot.enemies[0];
@@ -201,6 +222,8 @@ async function run() {
     await desktop.mouse.down({ button: "right" });
     await desktop.waitForTimeout(220);
     const aimOpen = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    const cockpitAim = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
+    report.cockpit.aim = cockpitAim;
     await desktop.mouse.up({ button: "right" });
     await desktop.waitForTimeout(160);
     const aimClosed = await desktop.evaluate(() => window.__tankTest.getSnapshot());
@@ -438,6 +461,7 @@ async function run() {
     await mobile.waitForTimeout(1500);
     await mobile.click("#btn-start");
     await mobile.waitForTimeout(450);
+    const mobileCockpitBase = await mobile.evaluate(() => window.__tankTest.cockpitInfo());
     if (shotDir) {
       await mobile.screenshot({
         path: path.join(shotDir, "手机横屏-第一人称战斗-20261127.png"),
@@ -466,6 +490,7 @@ async function run() {
     });
     await mobile.waitForTimeout(180);
     const mobileAimOpen = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    const mobileCockpitAim = await mobile.evaluate(() => window.__tankTest.cockpitInfo());
     if (shotDir) {
       await mobile.screenshot({
         path: path.join(shotDir, "手机横屏-第一人称开镜-20261127.png"),
@@ -552,6 +577,11 @@ async function run() {
         bubbles: true
       }));
     });
+    await mobile.evaluate(() => {
+      window.__tankTest.startBattle();
+      window.__tankTest.setHullYaw(-Math.PI / 2);
+    });
+    await mobile.waitForTimeout(160);
     const beforeDual = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
@@ -642,6 +672,10 @@ async function run() {
         hullPreserved: Math.abs(mobileAimClosed.player.angle - mobileAimStart.player.angle) < 1e-9,
         turretPreserved: Math.abs(mobileAimClosed.player.turretAngle - mobileAimStart.player.turretAngle) < 1e-9
       },
+      cockpit: {
+        base: mobileCockpitBase,
+        aim: mobileCockpitAim
+      },
       bodyOverflowX: await mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     };
     report.mobileErrors = mobileErrors;
@@ -662,6 +696,9 @@ async function run() {
   const backdrops = report.backdrops || {};
   const range = report.range || {};
   const tankViews = report.tankViews || {};
+  const cockpit = report.cockpit || {};
+  const cockpitBase = cockpit.base || {};
+  const cockpitAim = cockpit.aim || {};
   const passed = (
     gallery.cards === 6 &&
     gallery.loaded === 6 &&
@@ -680,6 +717,20 @@ async function run() {
     tankViews.sideB?.view === "side" &&
     tankViews.sideA?.mirror !== tankViews.sideB?.mirror &&
     tankViews.spriteReady &&
+    cockpitBase.ready &&
+    cockpitBase.source === "assets/cockpit/cn-99a-gunner.webp" &&
+    cockpitBase.width === 1364 &&
+    cockpitBase.height === 768 &&
+    cockpitBase.centerClear &&
+    cockpitBase.reticleAlpha === 0 &&
+    cockpitBase.muzzleY > 360 + 20 &&
+    cockpitAim.ready &&
+    cockpitAim.centerClear &&
+    cockpitAim.reticleAlpha === 0 &&
+    cockpitAim.muzzleY > 360 + 20 &&
+    cockpitAim.aimScale === 1.035 &&
+    cockpit.flash?.active &&
+    cockpit.flash.muzzleY > 360 + 20 &&
     report.desktopPlay.enemyCount === 10 &&
     report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
@@ -720,6 +771,12 @@ async function run() {
     mobile.aim.closedZoom === 1 &&
     mobile.aim.hullPreserved &&
     mobile.aim.turretPreserved &&
+    mobile.cockpit.base.ready &&
+    mobile.cockpit.base.centerClear &&
+    mobile.cockpit.base.muzzleY > 360 + 20 &&
+    mobile.cockpit.aim.ready &&
+    mobile.cockpit.aim.centerClear &&
+    mobile.cockpit.aim.aimScale === 1.035 &&
     Math.abs(mobile.lookChanged) > 0.02 &&
     mobile.dualMoved > 0.5 &&
     Math.abs(mobile.dualLookChanged) > 0.02 &&

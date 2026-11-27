@@ -1,7 +1,7 @@
 {
   "generated": "tools/process-vidu-assets.py",
   "source": "art-source/vidu",
-  "totalBytes": 1424184,
+  "totalBytes": 1545340,
   "assets": [
     {
       "path": "assets/tanks/cn-99a-front.webp",
@@ -266,6 +266,14 @@
       "bytes": 117256,
       "sha256": "301268377900d3aca43739fb828b973d8470926810f610dd8ffa602a53fb1508",
       "source": "art-source/vidu/稀疏林地远景全景.webp"
+    },
+    {
+      "path": "assets/cockpit/cn-99a-gunner.webp",
+      "width": 1364,
+      "height": 768,
+      "bytes": 121156,
+      "sha256": "906f96ccd4f441026a9dab55bd3a8d9588b7dd79f1cf5163b77c7237088b18ec",
+      "source": "art-source/vidu/99A第一人称炮塔内部绿幕.webp"
     }
   ]
 }

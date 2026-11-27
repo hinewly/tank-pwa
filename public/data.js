@@ -266,6 +266,17 @@ window.TankData = (() => {
     { id: "jp-type97", name: "日本 97 式", role: "敌方", status: "后续可选", art: "assets/tanks/jp-type97-front.webp" }
   ];
 
+  const COCKPIT_ART = {
+    "cn-99a": {
+      gunner: "assets/cockpit/cn-99a-gunner.webp",
+      aspect: 1364 / 768,
+      screenScale: 1.28,
+      aimScale: 1.035,
+      muzzleX: 0.502,
+      muzzleY: 0.457
+    }
+  };
+
   const BACKDROPS = {
     europe: { label: "欧洲战场", src: "assets/backdrops/europe.webp" },
     plain: { label: "开阔平原", src: "assets/backdrops/open-plain.webp" },
@@ -284,6 +295,7 @@ window.TankData = (() => {
     COVER_ART,
     TANK_ART,
     TANK_CATALOG,
+    COCKPIT_ART,
     BACKDROPS,
     cloneObstacles,
     cloneSpawns

@@ -290,7 +290,7 @@ async function runPwaChecks(browser) {
   const cacheKeys = await page.evaluate(() => caches.keys());
   const assetCache = await page.evaluate(async () => {
     const key = (await caches.keys()).find((item) => item.startsWith("dbtank-"));
-    if (!key) return { count: 0, totalBytes: 0 };
+    if (!key) return { count: 0, totalBytes: 0, cockpitCached: false };
     const cache = await caches.open(key);
     const requests = await cache.keys();
     const manifestResponse = await cache.match(new URL("./assets/manifest.json", location.href).href);
@@ -301,7 +301,8 @@ async function runPwaChecks(browser) {
     }
     return {
       count: requests.filter((request) => new URL(request.url).pathname.includes("/assets/")).length,
-      totalBytes
+      totalBytes,
+      cockpitCached: requests.some((request) => request.url.endsWith("/assets/cockpit/cn-99a-gunner.webp"))
     };
   });
   await context.setOffline(true);
@@ -364,6 +365,7 @@ async function run() {
     if (!pwa.deletedOwnOld || !pwa.keptOtherApp) failures.push("缓存隔离不正确");
     if (pwa.assetCache.count < 34) failures.push("PWA 素材预缓存不完整");
     if (pwa.assetCache.totalBytes > 2 * 1024 * 1024) failures.push("PWA 素材包体超过 2 MiB");
+    if (!pwa.assetCache.cockpitCached) failures.push("PWA 未预缓存 99A 炮塔内部");
     if (pwa.offline.state !== "menu") failures.push("离线首屏不可用");
     if (portalFailure.state !== "menu" || !portalFailure.canvas) failures.push("portal 不可用时游戏未启动");
     const unexpected = platform.errors.filter((message) =>

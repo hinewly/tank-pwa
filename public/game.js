@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.3.0";
+  const APP_VERSION = "v0.3.1";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -60,6 +60,7 @@
   let screenShake = 0;
   let damageFlash = 0;
   let hitMarker = 0;
+  let cockpitMuzzleFlash = 0;
   let toastTimer = 0;
   let deferredInstallPrompt = null;
   let installDismissed = false;
@@ -417,6 +418,7 @@
     screenShake = 0;
     damageFlash = 0;
     hitMarker = 0;
+    cockpitMuzzleFlash = 0;
     battleEndedAt = 0;
     battleStartedAt = performance.now();
     player = makePlayer(WORLD.playerSpawn);
@@ -526,6 +528,7 @@
     if (tank.isPlayer) {
       shotsFired += 1;
       screenShake = Math.max(screenShake, 2);
+      cockpitMuzzleFlash = 1;
     }
     AudioFx.shoot(tank.isPlayer);
     addBurst(x, y, tank.isPlayer ? "#ffe58a" : "#ffb15d", 8, 100);
@@ -755,6 +758,7 @@
     screenShake = Math.max(0, screenShake - dt * 28);
     damageFlash = Math.max(0, damageFlash - dt * 2);
     hitMarker = Math.max(0, hitMarker - dt * 3);
+    cockpitMuzzleFlash = Math.max(0, cockpitMuzzleFlash - dt * 6);
     if (comboTime > 0) {
       comboTime = Math.max(0, comboTime - dt);
       if (comboTime === 0) combo = 0;
@@ -1321,6 +1325,7 @@
 
   const coverImages = new Map();
   const tankImages = new Map();
+  const cockpitImages = new Map();
 
   const tankImage = (artId, view) => {
     const art = D.TANK_ART && D.TANK_ART[artId];
@@ -1348,6 +1353,32 @@
       backdropImages.set(backdropId, image);
     }
     return image.complete && image.naturalWidth ? image : null;
+  };
+
+  const cockpitImage = () => {
+    const art = D.COCKPIT_ART && D.COCKPIT_ART[player.type.artId];
+    if (!art || !art.gunner) return null;
+    let image = cockpitImages.get(player.type.artId);
+    if (!image) {
+      image = new Image();
+      image.decoding = "async";
+      image.src = art.gunner;
+      cockpitImages.set(player.type.artId, image);
+    }
+    return image.complete && image.naturalWidth ? image : null;
+  };
+
+  const cockpitLayout = (image, art) => {
+    const fitScale = Math.max(VIEW_W / image.naturalWidth, VIEW_H / image.naturalHeight);
+    const scale = (art.screenScale || 1) * (player.aiming ? (art.aimScale || 1) : 1);
+    const width = image.naturalWidth * fitScale * scale;
+    const height = image.naturalHeight * fitScale * scale;
+    return {
+      x: (VIEW_W - width) / 2,
+      y: 0,
+      width,
+      height
+    };
   };
 
   const coverImage = (obstacle) => {
@@ -1587,6 +1618,9 @@
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  };
+
+  const drawFloats = () => {
     for (const item of floats) {
       const p = projectWorld(item.x, item.y, item.z);
       if (!p) continue;
@@ -1625,7 +1659,7 @@
     }
   };
 
-  const drawFirstPersonCannon = () => {
+  const drawFallbackCockpit = () => {
     if (!player) return;
     const recoil = player.recoil;
     const cx = VIEW_W / 2 + 16;
@@ -1656,6 +1690,42 @@
     ctx.stroke();
     ctx.fillStyle = "rgba(219,235,160,.45)";
     ctx.fillRect(cx - 8, gunTop + 42, 3, 105);
+  };
+
+  const drawCockpitOverlay = () => {
+    if (!player) return;
+    const art = D.COCKPIT_ART && D.COCKPIT_ART[player.type.artId];
+    const image = cockpitImage();
+    if (!art || !image) {
+      drawFallbackCockpit();
+      return;
+    }
+    const frame = cockpitLayout(image, art);
+    const { x, y, width, height } = frame;
+    ctx.drawImage(image, x, y, width, height);
+
+    if (cockpitMuzzleFlash > 0) {
+      const mx = x + width * art.muzzleX;
+      const my = y + height * art.muzzleY;
+      const alpha = clamp(cockpitMuzzleFlash, 0, 1);
+      const glow = ctx.createRadialGradient(mx, my, 2, mx, my, 36);
+      glow.addColorStop(0, "rgba(255,250,205," + alpha + ")");
+      glow.addColorStop(0.25, "rgba(255,190,80," + alpha * 0.9 + ")");
+      glow.addColorStop(1, "rgba(255,110,35,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(mx, my, 38, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,230,145," + alpha + ")";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i += 1) {
+        const angle = i / 8 * TAU;
+        ctx.beginPath();
+        ctx.moveTo(mx + Math.cos(angle) * 8, my + Math.sin(angle) * 8);
+        ctx.lineTo(mx + Math.cos(angle) * (20 + alpha * 12), my + Math.sin(angle) * (20 + alpha * 12));
+        ctx.stroke();
+      }
+    }
   };
 
   const drawAimOverlay = () => {
@@ -1833,7 +1903,8 @@
     }
     drawBullets();
     drawWorldEffects();
-    drawFirstPersonCannon();
+    drawCockpitOverlay();
+    drawFloats();
     drawAimOverlay();
     drawCompass();
     drawReticle();
@@ -1918,6 +1989,12 @@
       }
     }
     for (const id of Object.keys(D.BACKDROPS || {})) backdropImage(id);
+    for (const [id, art] of Object.entries(D.COCKPIT_ART || {})) {
+      if (!art.gunner) continue;
+      const image = new Image();
+      image.src = art.gunner;
+      cockpitImages.set(id, image);
+    }
   };
 
   const renderGallery = () => {
@@ -2146,7 +2223,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=7").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=8").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2339,8 +2416,10 @@
       playerRange: B.playerRange,
       enemyCount: enemies.length,
       bullets: bullets.length,
+      cockpitMuzzleFlash,
       backdrop: selectedBackdrop,
       backdropReady: !!backdropImage(selectedBackdrop),
+      cockpitReady: !!cockpitImage(),
       kills,
       score,
       obstacles: obstacles.map((obstacle) => ({ type: obstacle.type, hp: obstacle.hp, destroyed: obstacle.destroyed }))
@@ -2391,6 +2470,36 @@
       if (!enemy) return false;
       const selection = enemySpriteView(enemy);
       return !!tankImage(enemy.type.artId, selection.view);
+    },
+    cockpitInfo: () => {
+      const art = player && D.COCKPIT_ART && D.COCKPIT_ART[player.type.artId];
+      const image = cockpitImage();
+      if (!art || !image) return { ready: false, source: art ? art.gunner : "" };
+      const frame = cockpitLayout(image, art);
+      const sourceX = clamp((VIEW_W / 2 - frame.x) / frame.width, 0, 1);
+      const sourceY = clamp((VIEW_H / 2 - frame.y) / frame.height, 0, 1);
+      const sample = document.createElement("canvas");
+      sample.width = image.naturalWidth;
+      sample.height = image.naturalHeight;
+      const sampleCtx = sample.getContext("2d");
+      sampleCtx.drawImage(image, 0, 0);
+      const reticleAlpha = sampleCtx.getImageData(
+        Math.min(image.naturalWidth - 1, Math.round(sourceX * image.naturalWidth)),
+        Math.min(image.naturalHeight - 1, Math.round(sourceY * image.naturalHeight)),
+        1,
+        1
+      ).data[3];
+      return {
+        ready: true,
+        source: art.gunner,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        reticleAlpha,
+        centerClear: reticleAlpha === 0,
+        muzzleX: frame.x + frame.width * art.muzzleX,
+        muzzleY: frame.y + frame.height * art.muzzleY,
+        aimScale: player.aiming ? art.aimScale : 1
+      };
     },
     enemySpriteViewAt: (id, x, y) => {
       const enemy = enemies.find((item) => item.id === id);

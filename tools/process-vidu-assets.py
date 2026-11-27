@@ -238,12 +238,42 @@ def process_backdrops(manifest: list[dict]) -> None:
         })
 
 
+def process_cockpit(manifest: list[dict]) -> None:
+    source = SOURCE / "99A第一人称炮塔内部绿幕.webp"
+    image = Image.open(source).convert("RGB")
+    rgb = np.array(image).astype(np.int16)
+    red = rgb[:, :, 0]
+    green = rgb[:, :, 1]
+    blue = rgb[:, :, 2]
+    reference = np.maximum(red, blue)
+    green_excess = green - np.maximum(reference * 1.08, 58)
+    key_mask = ((green > 75) & (green_excess > 12)).astype(np.uint8)
+    alpha = np.where(key_mask > 0, 0, 255).astype(np.uint8)
+    alpha = cv2.GaussianBlur(alpha, (5, 5), 1.05)
+
+    # 去绿边：仅压掉明显超出红/蓝通道的绿色。
+    despilled_green = np.minimum(green, np.maximum(red, blue) * 1.08).astype(np.uint8)
+    rgba = np.dstack([rgb.astype(np.uint8)[:, :, 0], despilled_green, rgb.astype(np.uint8)[:, :, 2], alpha])
+    output_image = Image.fromarray(rgba.astype(np.uint8), "RGBA")
+    output = PUBLIC / "cockpit" / "cn-99a-gunner.webp"
+    save_webp(output_image, output, quality=90)
+    manifest.append({
+        "path": str(output.relative_to(ROOT / "public")),
+        "width": output_image.width,
+        "height": output_image.height,
+        "bytes": output.stat().st_size,
+        "sha256": sha256(output),
+        "source": str(source.relative_to(ROOT)),
+    })
+
+
 def main() -> None:
     fix_webp_extensions()
     manifest: list[dict] = []
     process_tanks(manifest)
     process_covers(manifest)
     process_backdrops(manifest)
+    process_cockpit(manifest)
     total = sum(item["bytes"] for item in manifest)
     payload = {
         "generated": "tools/process-vidu-assets.py",
