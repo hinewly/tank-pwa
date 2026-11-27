@@ -4,9 +4,6 @@
 window.TankData = (() => {
   const BATTLE = {
     enemyTotal: 10,
-    initialEnemies: 6,
-    spawnDelay: 2.4,
-    maxActiveEnemies: 8,
     playerHp: 100,
     enemyHp: 92,
     playerDamage: 42,
@@ -77,53 +74,65 @@ window.TankData = (() => {
   const WORLD = {
     width: 2200,
     height: 1500,
-    playerSpawn: { x: 360, y: 750, angle: 0 }
+    playerSpawn: { x: 1100, y: 750, angle: -Math.PI / 2 }
   };
 
-  // 一张手工布置的草地战场：中央混凝土削弱直射，两翼留有绕后路线。
+  // 十面合围：中心留出机动空间，四周设可摧毁掩体、硬掩体和多条换位路线。
   const OBSTACLES = [
-    { x: 690, y: 250, w: 64, h: 150, type: "concrete" },
-    { x: 690, y: 1100, w: 64, h: 150, type: "concrete" },
-    { x: 1010, y: 450, w: 200, h: 62, type: "concrete" },
-    { x: 1010, y: 988, w: 200, h: 62, type: "concrete" },
-    { x: 1300, y: 710, w: 72, h: 80, type: "concrete" },
-    { x: 1780, y: 220, w: 80, h: 160, type: "concrete" },
-    { x: 1780, y: 1120, w: 80, h: 160, type: "concrete" },
+    // 中央四柱：近身安全角，同时保留十字机动通道。
+    { x: 990, y: 610, w: 70, h: 60, type: "concrete" },
+    { x: 1140, y: 610, w: 70, h: 60, type: "concrete" },
+    { x: 990, y: 830, w: 70, h: 60, type: "concrete" },
+    { x: 1140, y: 830, w: 70, h: 60, type: "concrete" },
 
-    { x: 435, y: 380, w: 125, h: 42, type: "wood" },
-    { x: 435, y: 1078, w: 125, h: 42, type: "wood" },
-    { x: 810, y: 600, w: 44, h: 118, type: "wood" },
-    { x: 810, y: 780, w: 44, h: 118, type: "wood" },
-    { x: 1170, y: 240, w: 150, h: 44, type: "wood" },
-    { x: 1170, y: 1216, w: 150, h: 44, type: "wood" },
-    { x: 1450, y: 520, w: 44, h: 140, type: "wood" },
-    { x: 1450, y: 840, w: 44, h: 140, type: "wood" },
-    { x: 1930, y: 620, w: 130, h: 42, type: "wood" },
-    { x: 1930, y: 838, w: 130, h: 42, type: "wood" },
+    // 四向硬掩体，避免所有炮线都能直接穿过中心。
+    { x: 760, y: 500, w: 60, h: 150, type: "concrete" },
+    { x: 1380, y: 500, w: 60, h: 150, type: "concrete" },
+    { x: 760, y: 850, w: 60, h: 150, type: "concrete" },
+    { x: 1380, y: 850, w: 60, h: 150, type: "concrete" },
+    { x: 560, y: 720, w: 120, h: 60, type: "concrete" },
+    { x: 1520, y: 720, w: 120, h: 60, type: "concrete" },
 
-    { x: 585, y: 700, w: 130, h: 38, type: "sandbag" },
-    { x: 585, y: 762, w: 130, h: 38, type: "sandbag" },
-    { x: 985, y: 300, w: 38, h: 120, type: "sandbag" },
-    { x: 985, y: 1080, w: 38, h: 120, type: "sandbag" },
-    { x: 1600, y: 350, w: 120, h: 40, type: "sandbag" },
-    { x: 1600, y: 1110, w: 120, h: 40, type: "sandbag" },
-    { x: 1660, y: 700, w: 130, h: 38, type: "sandbag" },
-    { x: 1660, y: 762, w: 130, h: 38, type: "sandbag" }
+    // 内圈木障会被持续炮火打穿，逼玩家换位。
+    { x: 860, y: 600, w: 130, h: 40, type: "wood" },
+    { x: 1210, y: 600, w: 130, h: 40, type: "wood" },
+    { x: 860, y: 860, w: 130, h: 40, type: "wood" },
+    { x: 1210, y: 860, w: 130, h: 40, type: "wood" },
+    { x: 620, y: 520, w: 120, h: 40, type: "wood" },
+    { x: 1460, y: 520, w: 120, h: 40, type: "wood" },
+    { x: 620, y: 940, w: 120, h: 40, type: "wood" },
+    { x: 1460, y: 940, w: 120, h: 40, type: "wood" },
+    { x: 540, y: 600, w: 40, h: 90, type: "wood" },
+    { x: 1620, y: 600, w: 40, h: 90, type: "wood" },
+    { x: 540, y: 810, w: 40, h: 90, type: "wood" },
+    { x: 1620, y: 810, w: 40, h: 90, type: "wood" },
+
+    // 中圈沙袋用于短时挡炮，摧毁后形成可穿行的新缺口。
+    { x: 980, y: 460, w: 240, h: 36, type: "sandbag" },
+    { x: 980, y: 1004, w: 240, h: 36, type: "sandbag" },
+    { x: 700, y: 450, w: 120, h: 36, type: "sandbag" },
+    { x: 1380, y: 450, w: 120, h: 36, type: "sandbag" },
+    { x: 700, y: 1014, w: 120, h: 36, type: "sandbag" },
+    { x: 1380, y: 1014, w: 120, h: 36, type: "sandbag" },
+    { x: 500, y: 520, w: 36, h: 120, type: "sandbag" },
+    { x: 1664, y: 520, w: 36, h: 120, type: "sandbag" },
+    { x: 500, y: 860, w: 36, h: 120, type: "sandbag" },
+    { x: 1664, y: 860, w: 36, h: 120, type: "sandbag" }
   ];
 
   const SPAWNS = [
-    { x: 1100, y: 760 },
-    { x: 1280, y: 360 },
-    { x: 1280, y: 1160 },
-    { x: 1620, y: 190 },
-    { x: 1650, y: 1320 },
-    { x: 1930, y: 760 },
-    { x: 1980, y: 400 },
-    { x: 1980, y: 1100 },
-    { x: 1510, y: 700 },
-    { x: 1500, y: 900 },
-    { x: 1450, y: 220 },
-    { x: 1450, y: 1280 }
+    // 北队 5 座：西翼、西北、正北、东北、东翼。
+    { x: 560, y: 450 },
+    { x: 820, y: 260 },
+    { x: 1100, y: 190 },
+    { x: 1380, y: 260 },
+    { x: 1640, y: 450 },
+    // 南队 5 座：西翼、西南、正南、东南、东翼。
+    { x: 560, y: 1050 },
+    { x: 820, y: 1240 },
+    { x: 1100, y: 1310 },
+    { x: 1380, y: 1240 },
+    { x: 1640, y: 1050 }
   ];
 
   const OBSTACLE_TYPES = {
@@ -131,6 +140,7 @@ window.TankData = (() => {
       label: "混凝土",
       hp: null,
       destructible: false,
+      height: 58,
       fill: "#77776f",
       edge: "#aaa99d",
       pattern: "#5c5c55"
@@ -139,6 +149,7 @@ window.TankData = (() => {
       label: "木制掩体",
       hp: 58,
       destructible: true,
+      height: 44,
       fill: "#8a5a32",
       edge: "#b47b45",
       pattern: "#5d381d"
@@ -147,6 +158,7 @@ window.TankData = (() => {
       label: "沙袋",
       hp: 92,
       destructible: true,
+      height: 30,
       fill: "#9b8652",
       edge: "#c4ad72",
       pattern: "#75633a"
@@ -155,6 +167,7 @@ window.TankData = (() => {
       label: "坦克残骸",
       hp: null,
       destructible: false,
+      height: 56,
       fill: "#252821",
       edge: "#5c5e52",
       pattern: "#11130f"

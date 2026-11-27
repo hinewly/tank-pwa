@@ -60,13 +60,27 @@ async function attachPortalMock(page) {
   });
 }
 
-async function collectPageErrors(page) {
+function collectPageErrors(page) {
   const errors = [];
   page.on("pageerror", (error) => errors.push("pageerror: " + error.message));
   page.on("console", (message) => {
     if (message.type() === "error") errors.push("console: " + message.text());
   });
   return errors;
+}
+
+async function startAtEnemy(page, index = 0) {
+  return page.evaluate((enemyIndex) => {
+    const snapshot = window.__tankTest.getSnapshot();
+    const enemy = snapshot.enemies[enemyIndex];
+    window.__tankTest.aimAt(enemy.x, enemy.y);
+    return {
+      id: enemy.id,
+      x: enemy.x,
+      y: enemy.y,
+      player: window.__tankTest.getSnapshot().player
+    };
+  }, index);
 }
 
 async function run() {
@@ -77,7 +91,7 @@ async function run() {
   try {
     const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await attachPortalMock(desktop);
-    const desktopErrors = await collectPageErrors(desktop);
+    const desktopErrors = collectPageErrors(desktop);
     await desktop.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await desktop.waitForTimeout(1800);
     report.desktopBoot = await desktop.evaluate(() => ({
@@ -93,26 +107,42 @@ async function run() {
         fullPage: true
       });
     }
+
     await desktop.click("#btn-start");
-    await desktop.waitForTimeout(700);
-    const before = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.waitForTimeout(500);
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-第一人称战斗-20261127.png"),
+        fullPage: true
+      });
+    }
+    const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    const beforeMove = initial.player;
     await desktop.keyboard.down("w");
-    await desktop.waitForTimeout(650);
+    await desktop.waitForTimeout(600);
     await desktop.keyboard.up("w");
-    const box = await desktop.locator("#game").boundingBox();
-    await desktop.mouse.move(box.x + box.width * 0.82, box.y + box.height * 0.48);
+    await desktop.keyboard.down("a");
+    await desktop.waitForTimeout(320);
+    await desktop.keyboard.up("a");
+    const canvasBox = await desktop.locator("#game").boundingBox();
+    const yawBeforeMouse = await desktop.evaluate(() => window.__tankTest.getSnapshot().player.turretAngle);
+    await desktop.mouse.move(canvasBox.x + canvasBox.width * 0.46, canvasBox.y + canvasBox.height * 0.48);
     await desktop.mouse.down();
-    await desktop.waitForTimeout(120);
+    await desktop.mouse.move(canvasBox.x + canvasBox.width * 0.59, canvasBox.y + canvasBox.height * 0.5);
     await desktop.mouse.up();
-    await desktop.waitForTimeout(350);
-    const after = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.waitForTimeout(300);
+    const afterPlay = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     report.desktopPlay = {
-      state: after.state,
-      moved: Math.hypot(after.player.x - before.player.x, after.player.y - before.player.y),
-      ammoBefore: before.player.ammo,
-      ammoAfter: after.player.ammo,
-      bullets: after.bullets
+      state: afterPlay.state,
+      enemyCount: initial.enemyCount,
+      moved: Math.hypot(afterPlay.player.x - beforeMove.x, afterPlay.player.y - beforeMove.y),
+      hullChanged: Math.abs(afterPlay.player.angle - beforeMove.angle),
+      mouseAimChanged: Math.abs(afterPlay.player.turretAngle - yawBeforeMouse),
+      ammoBefore: initial.player.ammo,
+      ammoAfter: afterPlay.player.ammo,
+      pointerLock: await desktop.evaluate(() => document.pointerLockElement === document.getElementById("game"))
     };
+
     report.combat = await desktop.evaluate(() => {
       const tank = { angle: Math.PI };
       const front = window.__tankTest.armorProfile(tank, 0);
@@ -125,41 +155,78 @@ async function run() {
         coverDestroyed: obstacleAfter.destroyed
       };
     });
-    if (shotDir) {
-      await desktop.screenshot({
-        path: path.join(shotDir, "PC端-战斗界面-20261127.png"),
-        fullPage: true
-      });
-    }
+
+    report.ringView = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const seen = new Set();
+      for (const enemy of snapshot.enemies) {
+        const bearing = Math.atan2(enemy.y - snapshot.player.y, enemy.x - snapshot.player.x);
+        window.__tankTest.setViewYaw(bearing);
+        for (const id of window.__tankTest.visibleEnemyIds()) seen.add(id);
+      }
+      return {
+        total: snapshot.enemies.length,
+        seen: seen.size,
+        ids: [...seen]
+      };
+    });
+
+    const projectionTarget = await startAtEnemy(desktop, 2);
+    const projectionBefore = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
+    await desktop.evaluate((target) => {
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.setPlayerPosition(target.player.x, target.player.y - 400);
+      window.__tankTest.aimAt(target.x, target.y);
+    }, projectionTarget);
+    const projectionAfter = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
+    await desktop.evaluate(() => window.__tankTest.fire());
+    await desktop.waitForTimeout(650);
+    const targetAfterShot = await desktop.evaluate((target) => {
+      const snapshot = window.__tankTest.getSnapshot();
+      return snapshot.enemies.find((enemy) => enemy.id === target.id);
+    }, projectionTarget);
+    report.projection = {
+      beforeDepth: projectionBefore && projectionBefore.depth,
+      afterDepth: projectionAfter && projectionAfter.depth,
+      beforeScale: projectionBefore && projectionBefore.scale,
+      afterScale: projectionAfter && projectionAfter.scale,
+      afterScreenX: projectionAfter && projectionAfter.x,
+      closerScaleGrew: !!(projectionBefore && projectionAfter && projectionAfter.scale > projectionBefore.scale),
+      aimedShotHit: !!(targetAfterShot && targetAfterShot.hp < 92),
+      targetHpAfterShot: targetAfterShot && targetAfterShot.hp
+    };
+
+    await desktop.evaluate(() => window.__tankTest.setViewYaw(Math.atan2(190 - 750, 1100 - 1100)));
+    await desktop.waitForTimeout(120);
     await desktop.keyboard.press("Escape");
-    await desktop.waitForTimeout(100);
+    await desktop.waitForTimeout(120);
     report.desktopPause = await desktop.evaluate(() => ({
       state: window.__tankTest.state,
       pauseVisible: !document.getElementById("pause-modal").classList.contains("hidden")
     }));
     await desktop.click("#btn-resume");
-    await desktop.waitForTimeout(100);
+    await desktop.waitForTimeout(120);
     report.desktopResume = await desktop.evaluate(() => window.__tankTest.state);
+
     await desktop.evaluate(() => {
       window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.spawnEnemyAt(900, 750);
-      window.__tankTest.setPlayerPosition(360, 650);
+      window.__tankTest.setPlayerPosition(1100, 750);
     });
     await desktop.waitForTimeout(180);
     const fixedBefore = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     for (const position of [
-      { x: 360, y: 650, aimX: 900, aimY: 150 },
-      { x: 450, y: 850, aimX: 1200, aimY: 1200 },
-      { x: 360, y: 750, aimX: 900, aimY: 150 }
+      { x: 1100, y: 650, yaw: -1.7 },
+      { x: 900, y: 750, yaw: 2.2 },
+      { x: 1300, y: 750, yaw: 0.45 }
     ]) {
-      await desktop.evaluate(({ x, y, aimX, aimY }) => {
+      await desktop.evaluate(({ x, y, yaw }) => {
         window.__tankTest.setPlayerPosition(x, y);
-        window.__tankTest.aimAt(aimX, aimY);
+        window.__tankTest.setViewYaw(yaw);
         window.__tankTest.fire();
       }, position);
-      await desktop.waitForTimeout(260);
+      await desktop.waitForTimeout(300);
     }
-    await desktop.waitForTimeout(4200);
+    await desktop.waitForTimeout(8000);
     const fixedAfter = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     const fixedBeforeById = new Map(fixedBefore.enemies.map((enemy) => [enemy.id, enemy]));
     const survivors = fixedAfter.enemies.filter((enemy) => fixedBeforeById.has(enemy.id));
@@ -175,16 +242,24 @@ async function run() {
       const before = fixedBeforeById.get(enemy.id);
       return Math.max(max, Math.abs(enemy.turretAngle - before.turretAngle));
     }, 0);
-    const enemyShots = survivors.reduce((sum, enemy) => sum + (enemy.shotsFired || 0), 0);
+    const firingEnemies = survivors.filter((enemy) => enemy.shotsFired > 0).length;
+    const enemyShots = survivors.reduce((sum, enemy) => sum + enemy.shotsFired, 0);
+    const sameEnemySet = (
+      fixedAfter.enemies.length === fixedBefore.enemies.length &&
+      fixedAfter.enemies.every((enemy) => fixedBeforeById.has(enemy.id))
+    );
     report.fixedTurret = {
+      initialEnemyCount: fixedBefore.enemies.length,
       survivors: survivors.length,
+      sameEnemySet,
       maxPositionDrift,
       maxHullAngleDrift,
       maxTurretTurn,
+      firingEnemies,
       enemyShots,
-      enemyTracks: fixedAfter.tracks.filter((track) => track.owner === "enemy").length,
       allFixedFlags: survivors.every((enemy) => enemy.fixed)
     };
+
     await desktop.evaluate(() => window.__tankTest.eliminateAllEnemies());
     await desktop.waitForTimeout(850);
     report.desktopVictory = await desktop.evaluate(() => ({
@@ -202,7 +277,7 @@ async function run() {
       deviceScaleFactor: 2
     });
     await attachPortalMock(portrait);
-    const portraitErrors = await collectPageErrors(portrait);
+    const portraitErrors = collectPageErrors(portrait);
     await portrait.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await portrait.waitForTimeout(1300);
     report.portraitBoot = await portrait.evaluate(() => ({
@@ -225,110 +300,116 @@ async function run() {
       deviceScaleFactor: 2
     });
     await attachPortalMock(mobile);
-    const mobileErrors = await collectPageErrors(mobile);
+    const mobileErrors = collectPageErrors(mobile);
     await mobile.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-    await mobile.waitForTimeout(1600);
-    report.mobileBoot = await mobile.evaluate(() => ({
-      width: document.documentElement.clientWidth,
-      hintDisplay: getComputedStyle(document.getElementById("rotate-hint")).display,
-      stageHeight: document.getElementById("game").getBoundingClientRect().height,
-      menuVisible: !document.getElementById("menu").classList.contains("hidden"),
-      bodyOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth
-    }));
+    await mobile.waitForTimeout(1500);
     await mobile.click("#btn-start");
-    await mobile.waitForTimeout(500);
+    await mobile.waitForTimeout(450);
+    if (shotDir) {
+      await mobile.screenshot({
+        path: path.join(shotDir, "手机横屏-第一人称战斗-20261127.png"),
+        fullPage: false
+      });
+    }
     const mobileBox = await mobile.locator("#game").boundingBox();
-    const beforeMobile = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    const beforeTouch = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
       const rect = canvas.getBoundingClientRect();
-      const point = (x, y) => ({
-        clientX: rect.left + rect.width * x,
-        clientY: rect.top + rect.height * y,
+      const x = width > height ? rect.width * 0.12 : rect.width * 0.12;
+      const y = height > width ? rect.height * 0.6 : rect.height * 0.72;
+      window.__touchCenter = { x: rect.left + x, y: rect.top + y };
+      canvas.dispatchEvent(new PointerEvent("pointerdown", {
+        clientX: window.__touchCenter.x,
+        clientY: window.__touchCenter.y,
         pointerId: 41,
         pointerType: "touch",
         bubbles: true,
         cancelable: true
-      });
-      canvas.dispatchEvent(new PointerEvent("pointerdown", point(0.1, height > width ? 0.55 : 0.72)));
-      canvas.dispatchEvent(new PointerEvent("pointermove", point(0.18, height > width ? 0.45 : 0.48)));
+      }));
+      canvas.dispatchEvent(new PointerEvent("pointermove", {
+        clientX: window.__touchCenter.x + 44,
+        clientY: window.__touchCenter.y - 48,
+        pointerId: 41,
+        pointerType: "touch",
+        bubbles: true,
+        cancelable: true
+      }));
     }, { width: mobileBox.width, height: mobileBox.height });
-    await mobile.waitForTimeout(650);
+    await mobile.waitForTimeout(500);
     await mobile.evaluate(() => {
       const canvas = document.getElementById("game");
-      const rect = canvas.getBoundingClientRect();
       canvas.dispatchEvent(new PointerEvent("pointerup", {
-        clientX: rect.left + rect.width * 0.18,
-        clientY: rect.top + rect.height * 0.48,
+        clientX: window.__touchCenter.x + 44,
+        clientY: window.__touchCenter.y - 48,
         pointerId: 41,
         pointerType: "touch",
         bubbles: true
       }));
     });
     const afterMove = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
       const rect = canvas.getBoundingClientRect();
-      const startX = rect.left + rect.width * 0.78;
-      const startY = rect.top + rect.height * (height > width ? 0.55 : 0.72);
-      const fire = new PointerEvent("pointerdown", {
-        clientX: startX,
-        clientY: startY,
+      const x = rect.left + rect.width * 0.72;
+      const y = rect.top + (height > width ? rect.height * 0.6 : rect.height * 0.72);
+      window.__lookCenter = { x, y };
+      canvas.dispatchEvent(new PointerEvent("pointerdown", {
+        clientX: x,
+        clientY: y,
         pointerId: 42,
         pointerType: "touch",
         bubbles: true,
         cancelable: true
-      });
-      canvas.dispatchEvent(fire);
+      }));
       canvas.dispatchEvent(new PointerEvent("pointermove", {
-        clientX: startX - 58,
-        clientY: startY - 8,
+        clientX: x - 50,
+        clientY: y - 8,
         pointerId: 42,
         pointerType: "touch",
         bubbles: true,
         cancelable: true
       }));
     }, { width: mobileBox.width, height: mobileBox.height });
-    await mobile.waitForTimeout(320);
+    await mobile.waitForTimeout(500);
+    const afterLook = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(() => {
       const canvas = document.getElementById("game");
-      const rect = canvas.getBoundingClientRect();
       canvas.dispatchEvent(new PointerEvent("pointerup", {
-        clientX: rect.left + rect.width * 0.7,
-        clientY: rect.top + rect.height * 0.7,
+        clientX: window.__lookCenter.x - 50,
+        clientY: window.__lookCenter.y - 8,
         pointerId: 42,
         pointerType: "touch",
         bubbles: true
       }));
     });
-    const afterTouchFire = await mobile.evaluate(() => window.__tankTest.getSnapshot());
-    const beforeDual = afterTouchFire;
+    const beforeDual = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
       const rect = canvas.getBoundingClientRect();
       const leftX = rect.left + rect.width * 0.12;
-      const leftY = rect.top + rect.height * (height > width ? 0.58 : 0.72);
-      const rightX = rect.left + rect.width * 0.78;
-      const rightY = leftY;
+      const rightX = rect.left + rect.width * 0.7;
+      const y = rect.top + (height > width ? rect.height * 0.58 : rect.height * 0.7);
       canvas.dispatchEvent(new PointerEvent("pointerdown", {
-        clientX: leftX, clientY: leftY, pointerId: 43, pointerType: "touch", bubbles: true, cancelable: true
+        clientX: leftX, clientY: y, pointerId: 51, pointerType: "touch", bubbles: true, cancelable: true
       }));
       canvas.dispatchEvent(new PointerEvent("pointerdown", {
-        clientX: rightX, clientY: rightY, pointerId: 44, pointerType: "touch", bubbles: true, cancelable: true
+        clientX: rightX, clientY: y, pointerId: 52, pointerType: "touch", bubbles: true, cancelable: true
       }));
       canvas.dispatchEvent(new PointerEvent("pointermove", {
-        clientX: leftX + 54, clientY: leftY - 50, pointerId: 43, pointerType: "touch", bubbles: true, cancelable: true
+        clientX: leftX + 48, clientY: y - 48, pointerId: 51, pointerType: "touch", bubbles: true, cancelable: true
       }));
       canvas.dispatchEvent(new PointerEvent("pointermove", {
-        clientX: rightX - 62, clientY: rightY - 10, pointerId: 44, pointerType: "touch", bubbles: true, cancelable: true
+        clientX: rightX - 52, clientY: y - 10, pointerId: 52, pointerType: "touch", bubbles: true, cancelable: true
       }));
     }, { width: mobileBox.width, height: mobileBox.height });
-    await mobile.waitForTimeout(380);
+    await mobile.waitForTimeout(450);
     const afterDual = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(() => {
       const canvas = document.getElementById("game");
       const rect = canvas.getBoundingClientRect();
-      for (const pointerId of [43, 44]) {
+      for (const pointerId of [51, 52]) {
         canvas.dispatchEvent(new PointerEvent("pointerup", {
           clientX: rect.left + rect.width * 0.4,
           clientY: rect.top + rect.height * 0.6,
@@ -338,52 +419,96 @@ async function run() {
         }));
       }
     });
-    report.mobilePlay = await mobile.evaluate(() => ({
-      state: window.__tankTest.state,
-      player: window.__tankTest.getSnapshot().player,
-      enemyCount: window.__tankTest.getSnapshot().enemies.length
-    }));
-    report.mobileTouch = {
-      moved: Math.hypot(afterMove.player.x - beforeMobile.player.x, afterMove.player.y - beforeMobile.player.y),
-      ammoBefore: afterMove.player.ammo,
-      ammoAfter: afterTouchFire.player.ammo,
-      turretChanged: Math.abs(afterTouchFire.player.turretAngle - afterMove.player.turretAngle)
+
+    const fireButtonInfo = await mobile.evaluate(() => {
+      const button = document.getElementById("mobile-fire");
+      const rect = button.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      return {
+        visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+        display: style.display,
+        opacity: style.opacity,
+        zIndex: style.zIndex,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        topElement: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.id || ""
+      };
+    });
+    await mobile.locator("#mobile-fire").dispatchEvent("pointerdown", {
+      pointerId: 43,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
+    await mobile.waitForTimeout(260);
+    await mobile.locator("#mobile-fire").dispatchEvent("pointerup", {
+      pointerId: 43,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
+    const afterFire = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    report.mobile = {
+      before: {
+        x: beforeTouch.player.x,
+        y: beforeTouch.player.y,
+        hull: beforeTouch.player.angle,
+        turret: beforeTouch.player.turretAngle,
+        ammo: beforeTouch.player.ammo
+      },
+      moved: Math.hypot(afterMove.player.x - beforeTouch.player.x, afterMove.player.y - beforeTouch.player.y),
+      hullChanged: Math.abs(afterMove.player.angle - beforeTouch.player.angle),
+      lookChanged: Math.abs(afterLook.player.turretAngle - afterMove.player.turretAngle),
+      dualMoved: Math.hypot(afterDual.player.x - beforeDual.player.x, afterDual.player.y - beforeDual.player.y),
+      dualLookChanged: Math.abs(afterDual.player.turretAngle - beforeDual.player.turretAngle),
+      fireButtonVisible: fireButtonInfo.visible,
+      fireButtonInfo,
+      ammoAfterFire: afterFire.player.ammo,
+      enemyCount: afterFire.enemyCount,
+      bodyOverflowX: await mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     };
-    report.mobileDualTouch = {
-      moved: Math.hypot(afterDual.player.x - beforeDual.player.x, afterDual.player.y - beforeDual.player.y),
-      ammoDelta: beforeDual.player.ammo - afterDual.player.ammo,
-      turretChanged: Math.abs(afterDual.player.turretAngle - beforeDual.player.turretAngle)
-    };
-    if (shotDir) {
-      await mobile.evaluate(() => window.__tankTest.startBattle());
-      await mobile.waitForTimeout(450);
-      await mobile.screenshot({
-        path: path.join(shotDir, "手机横屏-战斗界面-20261127.png"),
-        fullPage: true
-      });
-    }
     report.mobileErrors = mobileErrors;
   } finally {
     await browser.close();
   }
+
   const errors = [
     ...(report.desktopErrors || []),
-      ...(report.portraitErrors || []),
+    ...(report.portraitErrors || []),
     ...(report.mobileErrors || [])
   ].filter((entry) => !entry.includes("Failed to load resource") && !entry.includes("ERR_NAME_NOT_RESOLVED"));
+  const ring = report.ringView || {};
+  const projection = report.projection || {};
   const fixed = report.fixedTurret || {};
-  const fixedTurretPassed = (
-    fixed.survivors > 0 &&
+  const mobile = report.mobile || {};
+  const passed = (
+    report.desktopPlay.enemyCount === 10 &&
+    report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
+    report.desktopPlay.mouseAimChanged > 0.01 &&
+    Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
+    ring.total === 10 &&
+    ring.seen === 10 &&
+    projection.closerScaleGrew &&
+    projection.aimedShotHit &&
+    fixed.initialEnemyCount === 10 &&
+    fixed.survivors === 10 &&
+    fixed.sameEnemySet &&
     fixed.maxPositionDrift < 1e-9 &&
     fixed.maxHullAngleDrift < 1e-9 &&
     fixed.maxTurretTurn > 0.05 &&
     fixed.enemyShots > 0 &&
-    fixed.enemyTracks === 0 &&
-    fixed.allFixedFlags
+    fixed.firingEnemies >= 2 &&
+    fixed.allFixedFlags &&
+    mobile.enemyCount === 10 &&
+    mobile.fireButtonVisible &&
+    mobile.ammoAfterFire < mobile.before.ammo &&
+    Math.abs(mobile.lookChanged) > 0.02 &&
+    mobile.dualMoved > 0.5 &&
+    Math.abs(mobile.dualLookChanged) > 0.02 &&
+    Math.abs(mobile.hullChanged) > 0.01
   );
-  report.assertions = { fixedTurretPassed };
+  report.assertions = { firstPersonEncirlementPassed: passed };
   console.log(JSON.stringify(report, null, 2));
-  if (errors.length || !fixedTurretPassed) process.exitCode = 1;
+  if (errors.length || !passed) process.exitCode = 1;
 }
 
 run().catch((error) => {

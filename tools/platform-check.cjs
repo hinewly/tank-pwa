@@ -201,10 +201,6 @@ async function runPortalAndCloud(browser) {
 
   await pageA.click("#btn-start");
   await pageA.waitForTimeout(150);
-  await pageA.evaluate(() => window.__tankTest.damageFirstEnemy(Math.PI));
-  await pageA.waitForTimeout(160);
-  await pageA.evaluate(() => window.__tankTest.damageFirstEnemy(Math.PI));
-  await pageA.waitForTimeout(200);
   await pageA.evaluate(() => window.__tankTest.finishBattle(false));
   await pageA.waitForTimeout(1800);
   const localA = await pageA.evaluate(() => window.TankSync.loadLocal());
@@ -236,10 +232,6 @@ async function runPortalAndCloud(browser) {
   mock.failBackupWrites = true;
   await pageA.click("#btn-retry");
   await pageA.waitForTimeout(150);
-  await pageA.evaluate(() => window.__tankTest.damageFirstEnemy(Math.PI));
-  await pageA.waitForTimeout(160);
-  await pageA.evaluate(() => window.__tankTest.damageFirstEnemy(Math.PI));
-  await pageA.waitForTimeout(200);
   await pageA.evaluate(() => window.__tankTest.finishBattle(false));
   await pageA.waitForTimeout(900);
   const pendingBefore = await pageA.evaluate(() => ({

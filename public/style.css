@@ -258,6 +258,30 @@ button {
   background: var(--acid);
 }
 
+.bearing-readout {
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 5px 15px;
+  border-right: 1px solid rgba(218, 230, 170, .22);
+  border-left: 1px solid rgba(218, 230, 170, .22);
+  background: #10160f;
+  color: #8f9a85;
+  font-size: 10px;
+}
+
+.bearing-readout b {
+  color: #dfe7c8;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bearing-note {
+  margin-left: auto;
+  color: #778170;
+}
+
 .stage-shell {
   position: relative;
   isolation: isolate;
@@ -269,6 +293,8 @@ button {
 }
 
 .stage {
+  position: relative;
+  z-index: 0;
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -276,6 +302,32 @@ button {
   touch-action: none;
   user-select: none;
   cursor: crosshair;
+}
+
+.mobile-fire {
+  position: fixed;
+  right: 18px;
+  bottom: max(112px, env(safe-area-inset-bottom) + 92px);
+  z-index: 1000;
+  width: 68px;
+  height: 68px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(241, 217, 144, .72);
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 35%, #d97845, #8e351f 72%);
+  color: #fff7d5;
+  box-shadow: 0 8px 28px rgba(17, 9, 4, .42), inset 0 0 0 5px rgba(255, 255, 255, .06);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  touch-action: none;
+}
+
+.mobile-fire:active {
+  transform: scale(.95);
+  background: radial-gradient(circle at 42% 35%, #ffe8a6, #a84f2e);
 }
 
 .corner {
@@ -997,6 +1049,16 @@ kbd {
   .result-stats {
     grid-template-columns: repeat(3, 1fr);
   }
+
+  .bearing-readout {
+    gap: 10px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .bearing-note {
+    display: none;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 560px) {
@@ -1035,6 +1097,13 @@ kbd {
   .hud {
     min-height: 46px;
     grid-template-columns: minmax(145px, 1.35fr) repeat(3, .48fr) minmax(110px, .75fr) 36px;
+  }
+
+  .bearing-readout {
+    min-height: 25px;
+    padding: 3px 10px;
+    gap: 12px;
+    font-size: 9px;
   }
 
   .hud-item {
@@ -1152,6 +1221,12 @@ kbd {
 
   .modal-actions {
     margin-top: 14px;
+  }
+}
+
+@media (pointer: coarse) {
+  #mobile-fire:not(.hidden) {
+    display: flex;
   }
 }
 
