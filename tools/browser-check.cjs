@@ -241,7 +241,7 @@ async function run() {
         cancelable: true
       }));
     });
-    await desktop.waitForTimeout(3400);
+    await desktop.waitForTimeout(1600);
     await desktop.evaluate(() => {
       const canvas = document.getElementById("game");
       canvas.dispatchEvent(new PointerEvent("pointerup", {
@@ -330,7 +330,27 @@ async function run() {
       ammoAfter: afterPlay.player.ammo,
       movingSpeed: desktopMoving.snapshot.player.speed,
       movingHud: desktopMoving.hud,
+      audio: afterPlay.audio,
       pointerLock: await desktop.evaluate(() => document.pointerLockElement === document.getElementById("game"))
+    };
+
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(100);
+    const strafeStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.keyboard.down("e");
+    await desktop.waitForTimeout(620);
+    const strafeMid = await desktop.evaluate(() => ({
+      snapshot: window.__tankTest.getSnapshot(),
+      hud: window.__tankTest.movementHud()
+    }));
+    await desktop.keyboard.up("e");
+    report.desktopStrafe = {
+      moved: Math.hypot(
+        strafeMid.snapshot.player.x - strafeStart.player.x,
+        strafeMid.snapshot.player.y - strafeStart.player.y
+      ),
+      strafeSpeed: strafeMid.snapshot.player.strafeSpeed,
+      hud: strafeMid.hud
     };
 
     report.combat = await desktop.evaluate(() => {
@@ -506,7 +526,7 @@ async function run() {
       if (!target) break;
       const fired = await desktop.evaluate(() => window.__tankTest.fire());
       if (fired) easyShots += 1;
-      await desktop.waitForTimeout(3150);
+      await desktop.waitForTimeout(1150);
       const snapshot = await desktop.evaluate(() => window.__tankTest.getSnapshot());
       if (snapshot.state !== "playing" || snapshot.kills >= 3) break;
     }
@@ -753,7 +773,7 @@ async function run() {
       bubbles: true,
       cancelable: true
     });
-    await mobile.waitForTimeout(3300);
+    await mobile.waitForTimeout(1600);
     await mobile.locator("#mobile-fire").dispatchEvent("pointerup", {
       pointerId: 43,
       pointerType: "touch",
@@ -820,6 +840,7 @@ async function run() {
   const minimap = report.minimap || {};
   const singleShot = report.singleShot || {};
   const easyCombat = report.easyCombat || {};
+  const desktopStrafe = report.desktopStrafe || {};
   const cockpitBase = cockpit.base || {};
   const cockpitAim = cockpit.aim || {};
   const passed = (
@@ -830,7 +851,7 @@ async function run() {
     Object.values(backdrops).every((item) => item.ready && item.selected) &&
     range.range === 800 &&
     range.playerRange === 800 &&
-    range.playerReload === 2.9 &&
+    range.playerReload === 0.8 &&
     range.enemyReload === 5.2 &&
     range.distance > 800 &&
     range.moveOk &&
@@ -873,6 +894,13 @@ async function run() {
     report.desktopPlay.movingSpeed > 10 &&
     report.desktopPlay.movingHud.active &&
     /前进|倒车|车体转向/.test(report.desktopPlay.movingHud.text) &&
+    report.desktopPlay.audio &&
+    !report.desktopPlay.audio.muted &&
+    report.desktopPlay.audio.state === "running" &&
+    report.desktopPlay.audio.engineActive &&
+    desktopStrafe.moved > 8 &&
+    desktopStrafe.strafeSpeed > 20 &&
+    /右移/.test(desktopStrafe.hud.text) &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&

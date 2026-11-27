@@ -55,7 +55,7 @@ async function run() {
         return window.__tankTest.fire();
       }, current.clearIds);
       if (fired) shots += 1;
-      await page.waitForTimeout(fired ? 3150 : 250);
+      await page.waitForTimeout(fired ? 1150 : 250);
     }
 
     await page.waitForTimeout(1000);

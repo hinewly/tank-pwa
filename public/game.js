@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.4.0";
+  const APP_VERSION = "v0.4.1";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -180,6 +180,7 @@
   // ---------- 音效 ----------
   const AudioFx = (() => {
     let audio = null;
+    let engine = null;
     const get = () => {
       if (!audio) {
         try {
@@ -192,6 +193,30 @@
         } catch (e) {}
       }
       return audio;
+    };
+    const ensureEngine = () => {
+      const ac = get();
+      if (!ac) return null;
+      if (!engine) {
+        const low = ac.createOscillator();
+        const high = ac.createOscillator();
+        const filter = ac.createBiquadFilter();
+        const gain = ac.createGain();
+        low.type = "sawtooth";
+        high.type = "triangle";
+        low.frequency.value = 42;
+        high.frequency.value = 68;
+        filter.type = "lowpass";
+        filter.frequency.value = 190;
+        gain.gain.value = 0;
+        low.connect(filter);
+        high.connect(filter);
+        filter.connect(gain).connect(ac.destination);
+        low.start();
+        high.start();
+        engine = { ac, low, high, filter, gain };
+      }
+      return engine;
     };
     const tone = (from, to, duration, type, volume, delay = 0) => {
       const ac = get();
@@ -228,7 +253,32 @@
       source.start();
     };
     return {
-      unlock: get,
+      unlock: () => {
+        const ac = get();
+        if (ac) ensureEngine();
+        return ac;
+      },
+      setEngine: (active, speedRatio = 0, turnRatio = 0) => {
+        if (muted || !active) {
+          if (engine) {
+            engine.gain.gain.setTargetAtTime(0.0001, engine.ac.currentTime, 0.08);
+          }
+          return;
+        }
+        const nodes = ensureEngine();
+        if (!nodes) return;
+        const intensity = clamp(Math.max(speedRatio, turnRatio), 0, 1);
+        const now = nodes.ac.currentTime;
+        nodes.gain.gain.setTargetAtTime(0.012 + intensity * 0.042, now, 0.1);
+        nodes.low.frequency.setTargetAtTime(40 + intensity * 26, now, 0.12);
+        nodes.high.frequency.setTargetAtTime(64 + intensity * 43, now, 0.12);
+        nodes.filter.frequency.setTargetAtTime(170 + intensity * 180, now, 0.14);
+      },
+      info: () => ({
+        muted,
+        state: audio ? audio.state : "not-created",
+        engineActive: !!(audio && engine && audio.state === "running" && engine.gain.gain.value > 0)
+      }),
       click: () => tone(520, 760, 0.07, "triangle", 0.08),
       shoot: (isPlayer) => {
         noise(isPlayer ? 0.4 : 0.26, isPlayer ? 0.54 : 0.26, isPlayer ? 920 : 720);
@@ -363,6 +413,7 @@
     pitch: 0,
     aiming: false,
     speed: 0,
+    strafeSpeed: 0,
     fireCooldown: 0,
     reload: 0,
     reloadDuration: B.playerReload,
@@ -667,6 +718,7 @@
     if (!player || !player.alive) return;
     let throttle = 0;
     let steer = 0;
+    let strafe = 0;
     if (touches.left.id !== null) {
       throttle = -touches.left.dy;
       steer = touches.left.dx;
@@ -675,6 +727,8 @@
       if (keys.has("s") || keys.has("arrowdown")) throttle -= 1;
       if (keys.has("d") || keys.has("arrowright")) steer += 1;
       if (keys.has("a") || keys.has("arrowleft")) steer -= 1;
+      if (keys.has("e")) strafe += 1;
+      if (keys.has("q")) strafe -= 1;
     }
     if (touches.right.id !== null) {
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
@@ -688,12 +742,23 @@
       targetSpeed,
       (throttle !== 0 ? player.type.acceleration : player.type.brake) * dt
     );
+    player.strafeSpeed = approach(
+      player.strafeSpeed,
+      strafe * player.type.maxStrafe,
+      (strafe !== 0 ? player.type.strafeAcceleration : player.type.brake) * dt
+    );
     const turnSpeed = player.type.hullTurnRate * (0.58 + 0.42 * clamp(Math.abs(player.speed) / 70, 0, 1));
     player.angle = normalizeAngle(player.angle + steer * turnSpeed * dt);
-    movePlayer(Math.cos(player.angle) * player.speed * dt, Math.sin(player.angle) * player.speed * dt);
+    const forwardX = Math.cos(player.angle) * player.speed * dt;
+    const forwardY = Math.sin(player.angle) * player.speed * dt;
+    const rightX = -Math.sin(player.angle) * player.strafeSpeed * dt;
+    const rightY = Math.cos(player.angle) * player.strafeSpeed * dt;
+    movePlayer(forwardX + rightX, forwardY + rightY);
     hullTurnSignal = Math.abs(steer) > 0.08 ? 1 : Math.max(0, hullTurnSignal - dt * 4);
     const motionStrength = clamp(
-      Math.abs(player.speed) / player.type.maxForward + Math.abs(steer) * 0.32,
+      Math.abs(player.speed) / player.type.maxForward +
+      Math.abs(player.strafeSpeed) / player.type.maxStrafe * 0.55 +
+      Math.abs(steer) * 0.32,
       0,
       1
     );
@@ -945,7 +1010,7 @@
 
     window.addEventListener("keydown", (event) => {
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "r", " ", "arrowup", "arrowdown", "arrowleft", "arrowright", "escape"].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "r", " ", "arrowup", "arrowdown", "arrowleft", "arrowright", "escape"].includes(key)) {
         if (state === "playing" || key === "escape") event.preventDefault();
       }
       AudioFx.unlock();
@@ -2219,13 +2284,21 @@
     const motionElement = $("hud-motion");
     if (motionElement) {
       const speedPercent = Math.round(clamp(Math.abs(player.speed) / player.type.maxForward, 0, 1) * 100);
-      const moving = Math.abs(player.speed) > 2.5;
-      const motionText = moving
+      const strafePercent = Math.round(clamp(Math.abs(player.strafeSpeed) / player.type.maxStrafe, 0, 1) * 100);
+      const movingForward = Math.abs(player.speed) > 2.5;
+      const strafing = Math.abs(player.strafeSpeed) > 2.5;
+      const motionText = movingForward
         ? (player.speed > 0 ? "前进 " : "倒车 ") + speedPercent + "%"
-        : (hullTurnSignal > 0.08 ? "车体转向" : "静止");
+        : (strafing ? (player.strafeSpeed > 0 ? "右移 " : "左移 ") + strafePercent + "%"
+          : (hullTurnSignal > 0.08 ? "车体转向" : "静止"));
       motionElement.textContent = motionText;
-      motionElement.classList.toggle("moving", moving || hullTurnSignal > 0.08);
+      motionElement.classList.toggle("moving", movingForward || strafing || hullTurnSignal > 0.08);
     }
+    AudioFx.setEngine(
+      state === "playing" && !locked,
+      Math.abs(player.speed) / player.type.maxForward,
+      Math.max(Math.abs(player.strafeSpeed) / player.type.maxStrafe, hullTurnSignal * 0.55)
+    );
     setText("hud-zoom", player.aiming ? "1.7×" : "1×");
     const syncLabel = $("sync-status");
     if (syncLabel) {
@@ -2330,6 +2403,7 @@
   const showMenu = () => {
     state = "menu";
     keys.clear();
+    AudioFx.setEngine(false);
     if (player) player.aiming = false;
     setOverlay("menu", true);
     setOverlay("pause-modal", false);
@@ -2370,6 +2444,7 @@
   const pauseGame = (automatic = false) => {
     if (state !== "playing" || locked) return;
     state = "paused";
+    AudioFx.setEngine(false);
     keys.clear();
     if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
@@ -2399,6 +2474,7 @@
   const finishBattle = (won) => {
     if (state !== "playing") return;
     state = "result";
+    AudioFx.setEngine(false);
     battleEndedAt = performance.now();
     keys.clear();
     if (player) player.aiming = false;
@@ -2442,6 +2518,7 @@
     locked = true;
     if (state === "playing") {
       state = "paused";
+      AudioFx.setEngine(false);
       setOverlay("pause-modal", false);
     }
     if (player) player.aiming = false;
@@ -2494,7 +2571,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=9").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=10").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2558,8 +2635,14 @@
     $("btn-mute")?.addEventListener("click", () => {
       muted = !muted;
       setText("btn-mute", muted ? "🔇" : "🔊");
+      const muteButton = $("btn-mute");
+      if (muteButton) {
+        muteButton.setAttribute("aria-pressed", muted ? "true" : "false");
+        muteButton.title = muted ? "声音已关闭" : "声音已开启";
+      }
       saveData = Sync ? Sync.updateSettings({ muted }) : saveData;
       if (!muted) AudioFx.unlock();
+      else AudioFx.setEngine(false);
       showToast(muted ? "声音已关闭" : "声音已开启", 1500);
     });
     const mobileFire = $("mobile-fire");
@@ -2596,6 +2679,7 @@
     });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden" && state === "playing") pauseGame(true);
+      if (document.visibilityState === "visible" && !muted) AudioFx.unlock();
     });
     document.addEventListener("pointerlockchange", () => {
       if (document.pointerLockElement !== canvas && state === "playing" && !COARSE_POINTER) {
@@ -2622,6 +2706,14 @@
     renderGallery();
     setText("app-version", APP_VERSION);
     setText("btn-mute", muted ? "🔇" : "🔊");
+    const muteButton = $("btn-mute");
+    if (muteButton) {
+      muteButton.setAttribute("aria-pressed", muted ? "true" : "false");
+      muteButton.title = muted ? "声音已关闭" : "声音已开启";
+    }
+    setText("bearing-help", COARSE_POINTER
+      ? "左摇杆驾驶 · 右摇杆环视 · 左上战术雷达"
+      : "W/S 前后 · A/D 车体转向 · Q/E 横移 · 鼠标环视");
     resetBattle();
     state = "menu";
     updateCanvasFrame();
@@ -2662,6 +2754,7 @@
         turretAngle: player.turretAngle,
         pitch: player.pitch,
         speed: player.speed,
+        strafeSpeed: player.strafeSpeed,
         hullTurnSignal,
         aiming: player.aiming,
         zoom: player.aiming ? AIM_ZOOM : 1,
@@ -2700,6 +2793,7 @@
       enemyCount: enemies.length,
       bullets: bullets.length,
       cockpitMuzzleFlash,
+      audio: AudioFx.info(),
       backdrop: selectedBackdrop,
       backdropReady: !!backdropImage(selectedBackdrop),
       cockpitReady: !!cockpitImage(),
