@@ -180,6 +180,7 @@ async function run() {
         fullPage: true
       });
     }
+    const wreckAfterHit = await desktop.evaluate(() => window.__tankTest.hitFirstWreckForTest());
     await desktop.evaluate(() => window.__tankTest.pauseGame(false));
     await desktop.waitForTimeout(120);
     const pauseRestartVisible = await desktop.evaluate(() =>
@@ -194,6 +195,7 @@ async function run() {
       levelOneObstacles: levelOneStart.level.obstacleTotal,
       burningFirst,
       burningSecond,
+      wreckAfterHit,
       pauseRestartVisible,
       restartedLevel: restartedLevel.level,
       restartedEnemies: restartedLevel.enemyCount,
@@ -1038,6 +1040,9 @@ async function run() {
     /起火/.test(levelFlow.burningFirst?.feedback || "") &&
     levelFlow.burningSecond?.alive === false &&
     levelFlow.burningSecond?.wrecks === 1 &&
+    levelFlow.wreckAfterHit?.before === 1 &&
+    levelFlow.wreckAfterHit?.after === 1 &&
+    levelFlow.wreckAfterHit?.destroyed === false &&
     levelFlow.pauseRestartVisible &&
     levelFlow.restartedLevel?.index === 0 &&
     levelFlow.restartedEnemies === 5 &&

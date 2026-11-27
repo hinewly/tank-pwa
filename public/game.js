@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.2";
+  const APP_VERSION = "v0.5.3";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -3037,7 +3037,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=14").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=15").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3465,6 +3465,23 @@
         type,
         before,
         after: target.hp,
+        destroyed: target.destroyed,
+        feedback: shotFeedback ? shotFeedback.text : ""
+      };
+    },
+    hitFirstWreckForTest: () => {
+      const before = obstacles.filter((obstacle) => obstacle.type === "wreck");
+      const target = before[0];
+      if (!target) return { before: 0, after: 0, destroyed: false, feedback: "" };
+      damageObstacle(target, {
+        x: target.x + target.w / 2,
+        y: target.y + target.h / 2,
+        damage: B.playerDamage,
+        isPlayer: true
+      });
+      return {
+        before: before.length,
+        after: obstacles.filter((obstacle) => obstacle.type === "wreck").length,
         destroyed: target.destroyed,
         feedback: shotFeedback ? shotFeedback.text : ""
       };
