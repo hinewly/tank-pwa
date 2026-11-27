@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.1.0";
+  const APP_VERSION = "v0.1.1";
   const $ = (id) => document.getElementById(id);
   const TAU = Math.PI * 2;
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -1777,6 +1777,11 @@
       });
     },
     eliminateAllEnemies: () => {
+      if (player) {
+        player.hp = 9999;
+        player.maxHp = 9999;
+      }
+      bullets = bullets.filter((bullet) => bullet.isPlayer);
       while (spawnedEnemies < B.enemyTotal) {
         const spawns = D.cloneSpawns();
         spawnEnemy(spawns[spawnedEnemies % spawns.length]);

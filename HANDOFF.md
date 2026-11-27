@@ -2,7 +2,7 @@
 
 - last_updated: 2026-11-27 15:05
 - status: active（首版代码完成，正式部署待用户确认）
-- version: v0.1.0
+- version: v0.1.1
 
 ## 任务目标
 
