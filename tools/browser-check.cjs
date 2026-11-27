@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs");
+const path = require("path");
 const { chromium } = require(
   process.env.PLAYWRIGHT_CORE ||
   "/Users/zoujiean/CodeX/_temp-screenshots/2026-11/tools/vidu-cdp/node_modules/playwright-core"
@@ -8,6 +9,56 @@ const { chromium } = require(
 
 const BASE_URL = process.env.TANK_URL || "http://127.0.0.1:8810/";
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const PORTAL_SCRIPT = fs.readFileSync(
+  path.resolve(__dirname, "../../daobox-home/public/portal.js"),
+  "utf8"
+);
+
+function corsHeaders(request) {
+  return {
+    "Access-Control-Allow-Origin": request.headers().origin || "*",
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Vary": "Origin"
+  };
+}
+
+async function attachPortalMock(page) {
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.hostname !== "daobox.app") {
+      await route.continue();
+      return;
+    }
+    const cors = corsHeaders(request);
+    if (request.method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: cors });
+      return;
+    }
+    if (url.pathname === "/portal.js") {
+      await route.fulfill({
+        status: 200,
+        headers: { ...cors, "Content-Type": "application/javascript; charset=utf-8" },
+        body: PORTAL_SCRIPT
+      });
+      return;
+    }
+    let body = { ok: true };
+    if (url.pathname === "/api/me") body = { ok: true, user: { id: 81, nickname: "测试坦克", avatar: null } };
+    else if (url.pathname === "/api/child/me") body = { ok: false };
+    else if (url.pathname === "/api/time") body = { ok: true, used: 1, limit: 10, remaining: 9, unlimited: false, exceeded: false, kind: "user" };
+    else if (url.pathname === "/api/time/heartbeat") body = { ok: true, used: 1, limit: 10, remaining: 9, unlimited: false, exceeded: false, kind: "user" };
+    else if (url.pathname === "/api/reward/status") body = { ok: true, balance: 25, checkedApps: [], streak: 2 };
+    else if (url.pathname === "/api/backup" && request.method() === "GET") body = { ok: true, app: "tank", data: null };
+    await route.fulfill({
+      status: 200,
+      headers: { ...cors, "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(body)
+    });
+  });
+}
 
 async function collectPageErrors(page) {
   const errors = [];
@@ -25,6 +76,7 @@ async function run() {
   if (shotDir) fs.mkdirSync(shotDir, { recursive: true });
   try {
     const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await attachPortalMock(desktop);
     const desktopErrors = await collectPageErrors(desktop);
     await desktop.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await desktop.waitForTimeout(1800);
@@ -37,7 +89,7 @@ async function run() {
     }));
     if (shotDir) {
       await desktop.screenshot({
-        path: require("path").join(shotDir, "PC端-主菜单-20261127.png"),
+        path: path.join(shotDir, "PC端-主菜单-20261127.png"),
         fullPage: true
       });
     }
@@ -75,7 +127,7 @@ async function run() {
     });
     if (shotDir) {
       await desktop.screenshot({
-        path: require("path").join(shotDir, "PC端-战斗界面-20261127.png"),
+        path: path.join(shotDir, "PC端-战斗界面-20261127.png"),
         fullPage: true
       });
     }
@@ -104,6 +156,7 @@ async function run() {
       hasTouch: true,
       deviceScaleFactor: 2
     });
+    await attachPortalMock(portrait);
     const portraitErrors = await collectPageErrors(portrait);
     await portrait.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await portrait.waitForTimeout(1300);
@@ -114,7 +167,7 @@ async function run() {
     }));
     if (shotDir) {
       await portrait.screenshot({
-        path: require("path").join(shotDir, "手机竖屏-主菜单-20261127.png"),
+        path: path.join(shotDir, "手机竖屏-主菜单-20261127.png"),
         fullPage: true
       });
     }
@@ -126,6 +179,7 @@ async function run() {
       hasTouch: true,
       deviceScaleFactor: 2
     });
+    await attachPortalMock(mobile);
     const mobileErrors = await collectPageErrors(mobile);
     await mobile.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await mobile.waitForTimeout(1600);
@@ -259,7 +313,7 @@ async function run() {
       await mobile.evaluate(() => window.__tankTest.startBattle());
       await mobile.waitForTimeout(450);
       await mobile.screenshot({
-        path: require("path").join(shotDir, "手机横屏-战斗界面-20261127.png"),
+        path: path.join(shotDir, "手机横屏-战斗界面-20261127.png"),
         fullPage: true
       });
     }
