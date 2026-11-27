@@ -214,6 +214,31 @@ async function run() {
 
     await desktop.evaluate(() => window.__tankTest.startBattle(2));
     await desktop.waitForTimeout(500);
+    report.bulletPath = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      window.__tankTest.setViewYaw(0);
+      const ys = [220, 620, 1120].map((distance) =>
+        window.__tankTest.projectEyePoint(snapshot.player.x + distance, snapshot.player.y)?.y
+      );
+      return { ys, maxDelta: Math.max(...ys) - Math.min(...ys), pitch: window.__tankTest.getSnapshot().player.pitch };
+    });
+    report.verticalLook = await desktop.evaluate(() => {
+      const canvas = document.getElementById("game");
+      const before = window.__tankTest.getSnapshot().player;
+      canvas.dispatchEvent(new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 300,
+        clientY: 260,
+        movementX: 0,
+        movementY: 90
+      }));
+      const after = window.__tankTest.getSnapshot().player;
+      return {
+        pitchBefore: before.pitch,
+        pitchAfter: after.pitch,
+        yawDelta: Math.abs(after.turretAngle - before.turretAngle)
+      };
+    });
     const canvasBox = await desktop.locator("#game").boundingBox();
     const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
     report.cockpit = { base: cockpitBase };
@@ -983,6 +1008,11 @@ async function run() {
     levels[1].obstacleTotal === 19 &&
     levels[2].enemyTotal === 10 &&
     levels[2].obstacleTotal === 37 &&
+    report.bulletPath.pitch === 0 &&
+    report.bulletPath.maxDelta < 0.01 &&
+    report.verticalLook.pitchBefore === 0 &&
+    report.verticalLook.pitchAfter === 0 &&
+    report.verticalLook.yawDelta < 1e-9 &&
     levelFlow.levelOneEnemies === 5 &&
     levelFlow.levelOneObstacles === 6 &&
     levelFlow.burningFirst?.alive &&
@@ -1048,6 +1078,8 @@ async function run() {
     report.desktopPlay.audio.state === "running" &&
     report.desktopPlay.audio.engineActive &&
     report.desktopPlay.audio.cannonSampleLoaded &&
+    report.desktopPlay.audio.armorHitSampleLoaded &&
+    report.desktopPlay.audio.explosionSampleLoaded &&
     report.desktopPlay.audio.events.sampleShots > 0 &&
     report.engineAudio.idle.engineSampleLoaded &&
     report.engineAudio.moving.engineSampleLoaded &&

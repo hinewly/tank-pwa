@@ -9,14 +9,13 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.0";
+  const APP_VERSION = "v0.5.1";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
   const AIM_ZOOM = 3.2;
   const AIM_MOUSE_SCALE = 0.48;
   const EYE_HEIGHT = 44;
-  const PITCH_LIMIT = 0.2;
   const $ = (id) => document.getElementById(id);
   const TAU = Math.PI * 2;
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -86,7 +85,6 @@
   let muted = !!(saveData && saveData.settings && saveData.settings.muted);
   let mouseDragging = false;
   let lastPointerX = 0;
-  let lastPointerY = 0;
   const keys = new Set();
   const touches = {
     left: { id: null, baseX: 0, baseY: 0, x: 0, y: 0, dx: 0, dy: 0, mag: 0 },
@@ -201,7 +199,9 @@
     let sampleErrors = 0;
     const SOUND_FILES = {
       cannon: "assets/audio/tank-cannon.mp3",
-      engine: "assets/audio/tank-engine-loop.mp3"
+      engine: "assets/audio/tank-engine-loop.mp3",
+      armorHit: "assets/audio/tank-armor-hit.mp3",
+      explosion: "assets/audio/tank-explosion.mp3"
     };
     const events = {
       playerShots: 0,
@@ -262,7 +262,7 @@
       sampleLoading.set(name, pending);
       return pending;
     };
-    const playSample = (name, volume, playbackRate = 1, pan = 0, cutoff = 4800) => {
+    const playSample = (name, volume, playbackRate = 1, pan = 0, cutoff = 4800, delay = 0) => {
       const ac = get();
       const buffer = sampleBuffers.get(name);
       if (!ac || !buffer || muted) return false;
@@ -282,7 +282,7 @@
       } else {
         gain.connect(ensureMaster(ac));
       }
-      source.start();
+      source.start(ac.currentTime + delay);
       return true;
     };
     const ensureEngine = () => {
@@ -376,6 +376,8 @@
           ensureEngine();
           loadSample("cannon");
           loadSample("engine");
+          loadSample("armorHit");
+          loadSample("explosion");
         }
         return ac;
       },
@@ -419,6 +421,8 @@
         engineGain: engineSample ? engineSample.gain.gain.value : (engine ? engine.gain.gain.value : 0),
         cannonSampleLoaded: sampleBuffers.has("cannon"),
         engineSampleLoaded: sampleBuffers.has("engine"),
+        armorHitSampleLoaded: sampleBuffers.has("armorHit"),
+        explosionSampleLoaded: sampleBuffers.has("explosion"),
         sampleErrors,
         events: { ...events }
       }),
@@ -438,6 +442,14 @@
         );
         if (played) {
           events.sampleShots += 1;
+          playSample(
+            "explosion",
+            (isPlayer ? 0.11 : 0.07) * attenuation,
+            isPlayer ? 0.92 : 1.02,
+            pan,
+            isPlayer ? 1800 : 900,
+            0.025
+          );
         } else {
           events.fallbackShots += 1;
           loadSample("cannon");
@@ -462,8 +474,9 @@
         if (!ac || muted) return;
         events.hits += 1;
         const strong = zone === "rear" ? 1 : 0;
-        noise(0.14, 0.22 + strong * 0.08, 1900);
-        tone(zone === "rear" ? 180 : 260, 70, 0.22, "square", 0.17);
+        playSample("armorHit", 0.62 + strong * 0.12, 0.92 + Math.random() * 0.1, 0, 7200);
+        noise(0.12, 0.13 + strong * 0.05, 1650);
+        tone(zone === "rear" ? 150 : 205, 58, 0.2, "triangle", 0.1);
         if (strong) tone(95, 45, 0.36, "triangle", 0.16);
       },
       ricochet: () => {
@@ -471,8 +484,9 @@
         noise(0.08, 0.08, 3000);
       },
       explode: (large) => {
-        noise(large ? 0.62 : 0.32, large ? 0.55 : 0.28, large ? 650 : 900);
-        tone(large ? 105 : 155, 38, large ? 0.65 : 0.35, "triangle", large ? 0.24 : 0.14);
+        playSample("explosion", large ? 0.92 : 0.52, large ? 0.92 : 1.05, 0, 5200);
+        noise(large ? 0.52 : 0.28, large ? 0.22 : 0.12, large ? 620 : 850);
+        tone(large ? 92 : 135, 34, large ? 0.58 : 0.3, "triangle", large ? 0.16 : 0.08);
       },
       breakCover: () => {
         noise(0.24, 0.2, 1250);
@@ -948,7 +962,7 @@
     if (touches.right.id !== null) {
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
       player.turretAngle = normalizeAngle(player.turretAngle + touches.right.dx * STICK_LOOK_SPEED * lookScale * dt);
-      player.pitch = clamp(player.pitch - touches.right.dy * 0.72 * dt, -PITCH_LIMIT, PITCH_LIMIT);
+      player.pitch = 0;
     }
     player.throttleInput = throttle;
     player.steerInput = steer;
@@ -1178,7 +1192,6 @@
       AudioFx.unlock();
       if (event.pointerType === "mouse" || event.pointerType === "pen") {
         lastPointerX = event.clientX;
-        lastPointerY = event.clientY;
         mouseDragging = true;
         if (event.button === 0) {
           firePlayer();
@@ -1209,14 +1222,12 @@
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
       if (document.pointerLockElement === canvas) {
         player.turretAngle = normalizeAngle(player.turretAngle + event.movementX * MOUSE_SENSITIVITY * lookScale);
-        player.pitch = clamp(player.pitch - event.movementY * MOUSE_SENSITIVITY * 0.72 * lookScale, -PITCH_LIMIT, PITCH_LIMIT);
+        player.pitch = 0;
       } else if (mouseDragging) {
         const dx = event.clientX - lastPointerX;
-        const dy = event.clientY - lastPointerY;
         player.turretAngle = normalizeAngle(player.turretAngle + dx * MOUSE_SENSITIVITY * lookScale);
-        player.pitch = clamp(player.pitch - dy * MOUSE_SENSITIVITY * 0.72 * lookScale, -PITCH_LIMIT, PITCH_LIMIT);
         lastPointerX = event.clientX;
-        lastPointerY = event.clientY;
+        player.pitch = 0;
       }
     }, { passive: false });
 
@@ -1807,6 +1818,16 @@
       const burnWidth = sprite ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420) : width;
       drawBurningFx(projection.x, y + height * 0.1, burnWidth, height, obstacle.id.length, remaining);
     }
+    if (obstacle.type === "wreck" && projection.depth < 1100) {
+      ctx.fillStyle = "rgba(11,15,10,.76)";
+      roundedRect(projection.x - 42, y - 24, 84, 18, 5);
+      ctx.fill();
+      ctx.fillStyle = "#e7cf9a";
+      ctx.font = "700 10px -apple-system,'PingFang SC',sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("烧毁残骸", projection.x, y - 11);
+      ctx.textAlign = "left";
+    }
     if (obstacle.hitFlash > 0) {
       ctx.globalAlpha = obstacle.hitFlash * 0.34;
       ctx.fillStyle = "#fff0b0";
@@ -2127,6 +2148,44 @@
     }
   };
 
+  const drawWreckSmokeOverlay = () => {
+    const now = performance.now();
+    for (const obstacle of obstacles) {
+      if (obstacle.type !== "wreck") continue;
+      const p = projectWorld(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2, 8);
+      if (!p) continue;
+      const scale = clamp(p.scale, 0.25, 3.2);
+      const baseX = p.x;
+      const baseY = p.groundY - 34 * scale;
+      if (obstacle.burningUntil > now) {
+        const remaining = clamp((obstacle.burningUntil - now) / 9000, 0, 1);
+        for (let i = 0; i < 6; i += 1) {
+          const phase = now / 1000 * 0.42 + i * 0.72 + obstacle.id.length * 0.13;
+          const rise = i * 16 * scale + (phase % 1) * 12 * scale;
+          const drift = Math.sin(phase * 1.7) * 7 * scale;
+          const radius = (6 + i * 2.6) * scale;
+          ctx.globalAlpha = remaining * (0.36 - i * 0.034);
+          ctx.fillStyle = i < 2 ? "#27241f" : "#aaa69a";
+          ctx.beginPath();
+          ctx.arc(baseX + drift, baseY - rise, radius, 0, TAU);
+          ctx.fill();
+        }
+      }
+      if (p.depth < 1100) {
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = "rgba(12,15,11,.82)";
+        roundedRect(p.x - 44, baseY - 80 * scale, 88, 20, 5);
+        ctx.fill();
+        ctx.fillStyle = "#f0d39c";
+        ctx.font = "700 10px -apple-system,'PingFang SC',sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("烧毁残骸", p.x, baseY - 66 * scale);
+        ctx.textAlign = "left";
+      }
+    }
+    ctx.globalAlpha = 1;
+  };
+
   const drawFallbackCockpit = () => {
     if (!player) return;
     const recoil = player.recoil;
@@ -2300,6 +2359,7 @@
       const point = minimapPoint(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2);
       if (!point.inside) continue;
       const size = obstacle.type === "concrete" ? 3 : 2;
+      ctx.fillStyle = obstacle.type === "wreck" ? "rgba(212,116,66,.92)" : "rgba(128,139,116,.5)";
       ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
     }
 
@@ -2539,6 +2599,7 @@
       if (item.kind === "obstacle") drawObstacle(item.object, item.projection);
       else drawEnemy(item.object, item.projection);
     }
+    drawWreckSmokeOverlay();
     drawBullets();
     drawWorldEffects();
     drawCockpitOverlay();
@@ -2943,7 +3004,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=12").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=13").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3242,6 +3303,10 @@
         depth: p.depth,
         scale: p.scale
       } : null;
+    },
+    projectEyePoint: (x, y) => {
+      const p = projectWorld(x, y, EYE_HEIGHT);
+      return p ? { x: p.x, y: p.y, depth: p.depth, scale: p.scale } : null;
     },
     minimapInfo: () => ({
       visible: !!player,

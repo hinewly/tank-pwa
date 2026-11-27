@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=12">
+  <link rel="manifest" href="manifest.json?v=13">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.5.0</span>
+      <span class="version-badge" id="app-version">v0.5.1</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -130,7 +130,7 @@
               <h2>操控</h2>
               <ul class="rules-compact controls-list">
                 <li><kbd>W</kbd> 前进　<kbd>S</kbd> 倒车　<kbd>A/D</kbd> 左转 / 右转　<kbd>Q/E</kbd> 左右横移</li>
-                <li><kbd>鼠标</kbd> 360° 环视　<kbd>右键</kbd> 3.2× 炮长镜　<kbd>左键</kbd> 单发开火</li>
+                <li><kbd>鼠标左右</kbd> 360° 环视　<kbd>右键</kbd> 3.2× 炮长镜　<kbd>左键</kbd> 单发开火</li>
                 <li><kbd>手机</kbd> 左摇杆驾驶，右摇杆环视，独立开火/瞄准键</li>
                 <li><kbd>Esc</kbd> 暂停</li>
               </ul>
@@ -243,7 +243,7 @@
     <span id="contact-email"></span>
   </footer>
   <p class="disclaimer">本游戏为原创第一人称坦克竞技娱乐项目，不含真实货币交易、赌博或血腥内容；装甲与损伤均为游戏化数值。</p>
-  <p class="sound-credit">音效：<a href="https://opengameart.org/content/cannon-fire" target="_blank" rel="noreferrer">Thimras · Cannon fire（CC0）</a> · <a href="https://opengameart.org/content/engine-loop-heavy-vehicletank" target="_blank" rel="noreferrer">Nayckron · Heavy vehicle tank loop（CC BY 3.0）</a></p>
+  <p class="sound-credit">音效：<a href="https://opengameart.org/content/cannon-fire" target="_blank" rel="noreferrer">Thimras · Cannon fire（CC0）</a> · <a href="https://opengameart.org/content/engine-loop-heavy-vehicletank" target="_blank" rel="noreferrer">Nayckron · Heavy vehicle tank loop（CC BY 3.0）</a> · <a href="https://opengameart.org/content/2-high-quality-explosions" target="_blank" rel="noreferrer">qubodup · Explosions（CC BY 3.0）</a></p>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
@@ -261,9 +261,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=12"></script>
-  <script src="sync.js?v=12"></script>
-  <script src="game.js?v=12"></script>
+  <script src="data.js?v=13"></script>
+  <script src="sync.js?v=13"></script>
+  <script src="game.js?v=13"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {
