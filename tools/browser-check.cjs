@@ -143,6 +143,7 @@ async function run() {
     const canvasBox = await desktop.locator("#game").boundingBox();
     const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
     report.cockpit = { base: cockpitBase };
+    report.nearMissAudio = await desktop.evaluate(() => window.__tankTest.playNearMissSound());
     if (shotDir) {
       await desktop.screenshot({
         path: path.join(shotDir, "PC端-第一人称战斗-20261127.png"),
@@ -168,39 +169,18 @@ async function run() {
     };
     await desktop.evaluate(() => window.__tankTest.startBattle());
     await desktop.waitForTimeout(100);
-    const outOfRangeStart = await desktop.evaluate(() => {
-      const snapshot = window.__tankTest.getSnapshot();
-      const target = snapshot.enemies[0];
-      window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.setPlayerPosition(2100, 1400);
-      return {
-        id: target.id,
-        distance: Math.hypot(target.x - 2100, target.y - 1400),
-        shotsFired: target.shotsFired,
-        range: snapshot.enemyRange,
-        playerRange: snapshot.playerRange,
-        playerReload: snapshot.playerReload,
-        enemyReload: snapshot.enemyReload,
-        moveOk: window.__tankTest.setPlayerPosition(2100, 1400)
-      };
-    });
-    await desktop.waitForTimeout(1800);
-    const outOfRangeEnd = await desktop.evaluate((target) => {
-      const snapshot = window.__tankTest.getSnapshot();
-      return {
-        shotsFired: snapshot.enemies.find((enemy) => enemy.id === target.id).shotsFired,
-        inRange: window.__tankTest.enemyInRange(target.id)
-      };
-    }, outOfRangeStart);
-    report.range = {
-      ...outOfRangeStart,
-      shotsAfterWait: outOfRangeEnd.shotsFired,
-      stayedOutOfRange: !outOfRangeEnd.inRange,
-      outOfRangeDidNotFire: outOfRangeEnd.shotsFired === outOfRangeStart.shotsFired
-    };
-    await desktop.evaluate(() => window.__tankTest.startBattle());
-    await desktop.waitForTimeout(100);
     const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.range = {
+      range: initial.enemyRange,
+      playerRange: initial.playerRange,
+      playerReload: initial.playerReload,
+      enemyReload: initial.enemyReload,
+      distanceMin: initial.enemyDistanceMin,
+      distanceMax: initial.enemyDistanceMax,
+      allInRange: initial.enemies.every((enemy) =>
+        Math.hypot(enemy.x - initial.player.x, enemy.y - initial.player.y) <= initial.playerRange
+      )
+    };
     report.battlefield = {
       enemyDistanceMin: initial.enemyDistanceMin,
       enemyDistanceMax: initial.enemyDistanceMax,
@@ -225,6 +205,40 @@ async function run() {
         spriteReady: window.__tankTest.enemySpriteReady(enemy.id)
       };
     });
+    const outOfRangeStart = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const target = snapshot.enemies[0];
+      let best = null;
+      for (let x = 100; x <= 2900; x += 100) {
+        for (let y = 100; y <= 2500; y += 100) {
+          if (!window.__tankTest.setPlayerPosition(x, y)) continue;
+          const distance = Math.hypot(target.x - x, target.y - y);
+          if (!best || distance > best.distance) best = { x, y, distance };
+        }
+      }
+      if (!best) return null;
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.setPlayerPosition(best.x, best.y);
+      return {
+        id: target.id,
+        shotsFired: target.shotsFired,
+        ...best
+      };
+    });
+    await desktop.waitForTimeout(1800);
+    const outOfRangeEnd = await desktop.evaluate((target) => {
+      const snapshot = window.__tankTest.getSnapshot();
+      return {
+        shotsFired: snapshot.enemies.find((enemy) => enemy.id === target.id).shotsFired,
+        inRange: window.__tankTest.enemyInRange(target.id)
+      };
+    }, outOfRangeStart);
+    report.outOfRange = {
+      ...outOfRangeStart,
+      shotsAfterWait: outOfRangeEnd.shotsFired,
+      stayedOutOfRange: !outOfRangeEnd.inRange,
+      didNotFire: outOfRangeEnd.shotsFired === outOfRangeStart.shotsFired
+    };
     await desktop.evaluate(() => {
       window.__tankTest.startBattle();
       window.__tankTest.setPlayerHp(9999);
@@ -387,9 +401,9 @@ async function run() {
     await desktop.waitForTimeout(120);
     const projectionTarget = await startAtEnemy(desktop, 2);
     const projectionBefore = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
-    await desktop.evaluate((target) => {
-      const dx = 1100 - target.x;
-      const dy = 750 - target.y;
+    await desktop.evaluate(({ target, centerX, centerY }) => {
+      const dx = centerX - target.x;
+      const dy = centerY - target.y;
       const length = Math.max(1, Math.hypot(dx, dy));
       window.__tankTest.setPlayerHp(9999);
       window.__tankTest.setPlayerPosition(
@@ -397,7 +411,11 @@ async function run() {
         target.y + dy / length * 110
       );
       window.__tankTest.aimAt(target.x, target.y);
-    }, projectionTarget);
+    }, {
+      target: projectionTarget,
+      centerX: initial.player.x,
+      centerY: initial.player.y
+    });
     const projectionAfter = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
     await desktop.mouse.down({ button: "right" });
     await desktop.waitForTimeout(120);
@@ -432,7 +450,7 @@ async function run() {
       ) > 0.2
     };
 
-    await desktop.evaluate(() => window.__tankTest.setViewYaw(Math.atan2(190 - 750, 1100 - 1100)));
+    await desktop.evaluate(() => window.__tankTest.setViewYaw(-Math.PI / 2));
     await desktop.waitForTimeout(120);
     await desktop.evaluate(() => {
       if (document.exitPointerLock) document.exitPointerLock();
@@ -449,14 +467,14 @@ async function run() {
 
     await desktop.evaluate(() => {
       window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.setPlayerPosition(1100, 750);
+      window.__tankTest.setPlayerPosition(1500, 1300);
     });
     await desktop.waitForTimeout(180);
     const fixedBefore = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     for (const position of [
-      { x: 1100, y: 650, yaw: -1.7 },
-      { x: 900, y: 750, yaw: 2.2 },
-      { x: 1300, y: 750, yaw: 0.45 }
+      { x: 1500, y: 1200, yaw: -1.7 },
+      { x: 1300, y: 1300, yaw: 2.2 },
+      { x: 1700, y: 1300, yaw: 0.45 }
     ]) {
       await desktop.evaluate(({ x, y, yaw }) => {
         window.__tankTest.setPlayerPosition(x, y);
@@ -503,12 +521,13 @@ async function run() {
       maxShotsAdded,
       firingEnemies,
       enemyShots,
-      allFixedFlags: survivors.every((enemy) => enemy.fixed)
+      allFixedFlags: survivors.every((enemy) => enemy.fixed),
+      audioEvents: fixedAfter.audio.events
     };
 
     await desktop.evaluate(() => {
       window.__tankTest.startBattle();
-      window.__tankTest.setPlayerPosition(1080, 1180);
+      window.__tankTest.setPlayerPosition(1480, 1730);
     });
     await desktop.waitForTimeout(150);
     const easyStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
@@ -849,14 +868,14 @@ async function run() {
     gallery.backdrops === 4 &&
     Object.values(backdrops).length === 4 &&
     Object.values(backdrops).every((item) => item.ready && item.selected) &&
-    range.range === 800 &&
-    range.playerRange === 800 &&
+    range.range === 1500 &&
+    range.playerRange === 1500 &&
     range.playerReload === 0.8 &&
     range.enemyReload === 5.2 &&
-    range.distance > 800 &&
-    range.moveOk &&
-    range.stayedOutOfRange &&
-    range.outOfRangeDidNotFire &&
+    range.allInRange &&
+    report.outOfRange.distance > 1500 &&
+    report.outOfRange.stayedOutOfRange &&
+    report.outOfRange.didNotFire &&
     tankViews.front?.view === "front" &&
     tankViews.rear?.view === "rear" &&
     tankViews.sideA?.view === "side" &&
@@ -877,8 +896,8 @@ async function run() {
     cockpitAim.aimScale === 1.035 &&
     cockpit.flash?.active &&
     cockpit.flash.muzzleY > 360 + 20 &&
-    battlefield.enemyDistanceMin >= 690 &&
-    battlefield.enemyDistanceMax <= 800 &&
+    battlefield.enemyDistanceMin >= 1050 &&
+    battlefield.enemyDistanceMax <= 1250 &&
     battlefield.difficulty?.label === "新手" &&
     battlefield.difficulty.playerHp === 180 &&
     battlefield.difficulty.playerDamage === 80 &&
@@ -898,6 +917,8 @@ async function run() {
     !report.desktopPlay.audio.muted &&
     report.desktopPlay.audio.state === "running" &&
     report.desktopPlay.audio.engineActive &&
+    report.nearMissAudio.state === "running" &&
+    report.nearMissAudio.events.nearMisses > 0 &&
     desktopStrafe.moved > 8 &&
     desktopStrafe.strafeSpeed > 20 &&
     /右移/.test(desktopStrafe.hud.text) &&
@@ -911,7 +932,7 @@ async function run() {
     projection.aimingDuringShot &&
     projection.movedWhileAiming &&
     report.pcAim.open &&
-    report.pcAim.openZoom === 1.7 &&
+    report.pcAim.openZoom === 3.2 &&
     !report.pcAim.closed &&
     report.pcAim.closedZoom === 1 &&
     report.pcAim.hullPreserved &&
@@ -929,11 +950,14 @@ async function run() {
     fixed.enemyShots > 0 &&
     fixed.firingEnemies >= 2 &&
     fixed.allFixedFlags &&
+    fixed.audioEvents.playerShots > 0 &&
+    fixed.audioEvents.enemyShots > 0 &&
+    fixed.audioEvents.hits > 0 &&
     easyCombat.kills >= 2 &&
     easyCombat.state === "playing" &&
     easyCombat.playerHp > 0 &&
-    easyCombat.startX === 1080 &&
-    easyCombat.startY === 1180 &&
+    easyCombat.startX === 1480 &&
+    easyCombat.startY === 1730 &&
     mobile.enemyCount === 10 &&
     mobile.fireButtonVisible &&
     mobile.shotsAddedAfterHold === 1 &&
@@ -943,7 +967,7 @@ async function run() {
     mobile.aim.visible &&
     !mobile.aim.overlapped &&
     mobile.aim.open &&
-    mobile.aim.openZoom === 1.7 &&
+    mobile.aim.openZoom === 3.2 &&
     !mobile.aim.closed &&
     mobile.aim.closedZoom === 1 &&
     mobile.aim.hullPreserved &&

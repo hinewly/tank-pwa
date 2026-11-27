@@ -26,7 +26,7 @@ async function run() {
     await page.waitForFunction(() => window.__tankTest && window.__tankTest.state === "menu");
     await page.click("#btn-start");
     await page.waitForTimeout(200);
-    await page.evaluate(() => window.__tankTest.setPlayerPosition(1080, 1180));
+    await page.evaluate(() => window.__tankTest.setPlayerPosition(1480, 1730));
 
     let shots = 0;
     let repositioned = false;
@@ -35,8 +35,8 @@ async function run() {
       if (current.game.state !== "playing" || current.game.kills >= 10) break;
       if (!current.clearIds.length) {
         const moved = await page.evaluate(() => {
-          for (let x = 360; x <= 1840; x += 40) {
-            for (let y = 260; y <= 1240; y += 40) {
+          for (let x = 300; x <= 2700; x += 60) {
+            for (let y = 300; y <= 2300; y += 60) {
               if (!window.__tankTest.setPlayerPosition(x, y)) continue;
               if (window.__tankTest.clearShotEnemyIds().length) return true;
             }

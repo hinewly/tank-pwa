@@ -13,8 +13,8 @@ window.TankData = (() => {
     magazineSize: 1,
     playerReload: 0.8,
     enemyReload: 5.2,
-    enemyRange: 800,
-    playerRange: 800,
+    enemyRange: 1500,
+    playerRange: 1500,
     enemyAimBias: 0.065,
     enemySpread: 0.16,
     fireCooldown: 0.35,
@@ -80,10 +80,11 @@ window.TankData = (() => {
   };
 
   const WORLD = {
-    width: 2200,
-    height: 1500,
-    playerSpawn: { x: 1100, y: 750, angle: -Math.PI / 2 }
+    width: 3000,
+    height: 2600,
+    playerSpawn: { x: 1500, y: 1300, angle: -Math.PI / 2 }
   };
+  const OBSTACLE_OFFSET = { x: 400, y: 550 };
 
   // 十面合围：中心留出机动空间，四周设可摧毁掩体、硬掩体和多条换位路线。
   const OBSTACLES = [
@@ -134,18 +135,18 @@ window.TankData = (() => {
   ];
 
   const SPAWNS = [
-    // 北队 5 座：把固定炮台拉到 700～754m 环带，留出观察和横向规避空间。
-    { x: 400, y: 470 },
-    { x: 620, y: 210 },
-    { x: 1100, y: 50 },
-    { x: 1580, y: 210 },
-    { x: 1800, y: 470 },
-    // 南队 5 座：与北队镜像布置，全部仍在 800m 有效射程内。
-    { x: 400, y: 1030 },
-    { x: 620, y: 1290 },
-    { x: 1100, y: 1450 },
-    { x: 1580, y: 1290 },
-    { x: 1800, y: 1030 }
+    // 北队 5 座：约 1080～1185m 外环，广角先侦察、3.2× 炮长镜再精打。
+    { x: 600, y: 700 },
+    { x: 950, y: 250 },
+    { x: 1500, y: 150 },
+    { x: 2050, y: 250 },
+    { x: 2400, y: 700 },
+    // 南队 5 座：与北队镜像布置，全部仍在 1500m 有效射程内。
+    { x: 600, y: 1900 },
+    { x: 950, y: 2350 },
+    { x: 1500, y: 2450 },
+    { x: 2050, y: 2350 },
+    { x: 2400, y: 1900 }
   ];
 
   const OBSTACLE_TYPES = {
@@ -289,7 +290,11 @@ window.TankData = (() => {
     forest: { label: "稀疏林地", src: "assets/backdrops/sparse-forest.webp" }
   };
 
-  const cloneObstacles = () => OBSTACLES.map((o) => ({ ...o }));
+  const cloneObstacles = () => OBSTACLES.map((o) => ({
+    ...o,
+    x: o.x + OBSTACLE_OFFSET.x,
+    y: o.y + OBSTACLE_OFFSET.y
+  }));
   const cloneSpawns = () => SPAWNS.map((s) => ({ ...s }));
 
   return {

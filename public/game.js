@@ -8,12 +8,12 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.4.1";
+  const APP_VERSION = "v0.4.2";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
-  const AIM_ZOOM = 1.7;
-  const AIM_MOUSE_SCALE = 0.56;
+  const AIM_ZOOM = 3.2;
+  const AIM_MOUSE_SCALE = 0.48;
   const EYE_HEIGHT = 44;
   const PITCH_LIMIT = 0.2;
   const $ = (id) => document.getElementById(id);
@@ -27,7 +27,7 @@
     width: 148,
     height: 154,
     radius: 60,
-    worldRadius: 820
+    worldRadius: 1450
   };
   const OBSTACLE_WIDTH_FACTOR = {
     concrete: 0.72,
@@ -109,6 +109,14 @@
     return target;
   };
   const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const pointSegmentDistance = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSq = dx * dx + dy * dy;
+    if (lengthSq < 0.000001) return Math.hypot(px - x1, py - y1);
+    const t = clamp(((px - x1) * dx + (py - y1) * dy) / lengthSq, 0, 1);
+    return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
+  };
   const compassDegrees = (angle) => (angle * 180 / Math.PI + 90 + 360) % 360;
   const compassText = (angle) => String(Math.round(compassDegrees(angle)) % 360).padStart(3, "0") + "°";
   const relativeDegrees = (angle) => {
@@ -181,6 +189,13 @@
   const AudioFx = (() => {
     let audio = null;
     let engine = null;
+    let master = null;
+    const events = {
+      playerShots: 0,
+      enemyShots: 0,
+      nearMisses: 0,
+      hits: 0
+    };
     const get = () => {
       if (!audio) {
         try {
@@ -193,6 +208,21 @@
         } catch (e) {}
       }
       return audio;
+    };
+    const ensureMaster = (ac) => {
+      if (!ac) return null;
+      if (!master) {
+        master = ac.createGain();
+        const compressor = ac.createDynamicsCompressor();
+        master.gain.value = 0.9;
+        compressor.threshold.value = -16;
+        compressor.knee.value = 18;
+        compressor.ratio.value = 5;
+        compressor.attack.value = 0.004;
+        compressor.release.value = 0.24;
+        master.connect(compressor).connect(ac.destination);
+      }
+      return master;
     };
     const ensureEngine = () => {
       const ac = get();
@@ -211,7 +241,7 @@
         gain.gain.value = 0;
         low.connect(filter);
         high.connect(filter);
-        filter.connect(gain).connect(ac.destination);
+        filter.connect(gain).connect(ensureMaster(ac));
         low.start();
         high.start();
         engine = { ac, low, high, filter, gain };
@@ -229,11 +259,11 @@
       oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, to), start + duration);
       gain.gain.setValueAtTime(volume, start);
       gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-      oscillator.connect(gain).connect(ac.destination);
+      oscillator.connect(gain).connect(ensureMaster(ac));
       oscillator.start(start);
       oscillator.stop(start + duration + 0.02);
     };
-    const noise = (duration, volume, cutoff) => {
+    const noise = (duration, volume, cutoff, pan = 0) => {
       const ac = get();
       if (!ac || muted) return;
       const length = Math.floor(ac.sampleRate * duration);
@@ -245,11 +275,18 @@
       const source = ac.createBufferSource();
       const filter = ac.createBiquadFilter();
       const gain = ac.createGain();
+      const stereo = ac.createStereoPanner ? ac.createStereoPanner() : null;
       source.buffer = buffer;
       filter.type = "lowpass";
       filter.frequency.value = cutoff;
       gain.gain.value = volume;
-      source.connect(filter).connect(gain).connect(ac.destination);
+      source.connect(filter).connect(gain);
+      if (stereo) {
+        stereo.pan.value = clamp(pan, -1, 1);
+        gain.connect(stereo).connect(ensureMaster(ac));
+      } else {
+        gain.connect(ensureMaster(ac));
+      }
       source.start();
     };
     return {
@@ -277,13 +314,26 @@
       info: () => ({
         muted,
         state: audio ? audio.state : "not-created",
-        engineActive: !!(audio && engine && audio.state === "running" && engine.gain.gain.value > 0)
+        engineActive: !!(audio && engine && audio.state === "running" && engine.gain.gain.value > 0),
+        events: { ...events }
       }),
       click: () => tone(520, 760, 0.07, "triangle", 0.08),
-      shoot: (isPlayer) => {
-        noise(isPlayer ? 0.4 : 0.26, isPlayer ? 0.54 : 0.26, isPlayer ? 920 : 720);
-        tone(isPlayer ? 145 : 118, 31, 0.44, "sawtooth", isPlayer ? 0.24 : 0.13);
-        tone(82, 27, 0.52, "triangle", isPlayer ? 0.16 : 0.09);
+      shoot: (isPlayer, distance = 0) => {
+        const ac = get();
+        if (!ac || muted) return;
+        if (isPlayer) events.playerShots += 1;
+        else events.enemyShots += 1;
+        const attenuation = isPlayer ? 1 : clamp(1 - distance / 2200, 0.42, 1);
+        noise(isPlayer ? 0.4 : 0.34, (isPlayer ? 0.54 : 0.32) * attenuation, isPlayer ? 920 : 640);
+        tone(isPlayer ? 145 : 118, 31, 0.44, "sawtooth", (isPlayer ? 0.24 : 0.17) * attenuation);
+        tone(82, 27, 0.52, "triangle", (isPlayer ? 0.16 : 0.12) * attenuation);
+      },
+      whoosh: () => {
+        const ac = get();
+        if (!ac || muted) return;
+        events.nearMisses += 1;
+        noise(0.24, 0.2, 3400);
+        tone(920, 150, 0.26, "sawtooth", 0.075);
       },
       empty: () => tone(760, 520, 0.06, "square", 0.06),
       reload: () => {
@@ -291,6 +341,9 @@
         setTimeout(() => tone(460, 390, 0.04, "square", 0.05), 190);
       },
       hit: (zone) => {
+        const ac = get();
+        if (!ac || muted) return;
+        events.hits += 1;
         const strong = zone === "rear" ? 1 : 0;
         noise(0.14, 0.22 + strong * 0.08, 1900);
         tone(zone === "rear" ? 180 : 260, 70, 0.22, "square", 0.17);
@@ -595,7 +648,8 @@
       damage: tank.isPlayer ? B.playerDamage : B.enemyDamage,
       alive: true,
       life: 2.4,
-      rangeLeft: tank.isPlayer ? B.playerRange : B.enemyRange
+      rangeLeft: tank.isPlayer ? B.playerRange : B.enemyRange,
+      nearMissPlayed: false
     });
     tank.ammo -= 1;
     tank.shotsFired += 1;
@@ -608,7 +662,7 @@
       screenShake = Math.max(screenShake, 6);
       cockpitMuzzleFlash = 1;
     }
-    AudioFx.shoot(tank.isPlayer);
+    AudioFx.shoot(tank.isPlayer, tank.isPlayer ? 0 : distanceBetween(tank, player));
     addBurst(x, y, tank.isPlayer ? "#ffe08a" : "#ffb15d", 12, 145);
     addBurst(x, y, "rgba(73,70,62,.72)", 9, 90);
     return true;
@@ -689,7 +743,7 @@
     if (!target || !target.alive) return;
     const impactDirection = Math.atan2(bullet.vy, bullet.vx);
     const armor = armorProfile(target, impactDirection);
-    if (armor.zone === "front" && Math.random() < B.frontRicochetChance) {
+    if (armor.zone === "front" && !bullet.isPlayer && Math.random() < B.frontRicochetChance) {
       addBurst(bullet.x, bullet.y, "#fff2b2", 16, 160);
       addRing(bullet.x, bullet.y, 44, "rgba(255,239,176,.75)", 0.38);
       addFloat(target.x, target.y, "跳弹", "#fff0a6", 20);
@@ -708,7 +762,7 @@
     if (target.isPlayer) damageFlash = Math.max(damageFlash, 0.7);
     addImpactExplosion(bullet.x, bullet.y);
     addFloat(target.x, target.y, armor.label + " -" + damage, armor.color, 18);
-    screenShake = Math.max(screenShake, target.isPlayer ? 8 : 4);
+    screenShake = Math.max(screenShake, target.isPlayer ? 16 : 5);
     AudioFx.hit(armor.zone);
     if (target.hp <= 0) destroyTank(target);
   };
@@ -801,6 +855,9 @@
       let nearestT = 1;
       let hitType = null;
       let hitTarget = null;
+      const playerPassDistance = (!bullet.isPlayer && player && player.alive)
+        ? pointSegmentDistance(player.x, player.y, bullet.px, bullet.py, bullet.x, bullet.y)
+        : Infinity;
       for (const obstacle of obstacles) {
         if (obstacle.destroyed || !obstacle.blocks) continue;
         const t = segmentRectHit(bullet.px, bullet.py, bullet.x, bullet.y, obstacle);
@@ -829,6 +886,14 @@
           addBurst(bullet.x, bullet.y, "#d9d0ad", 8, 90);
           AudioFx.hit("front");
         }
+      } else if (
+        !bullet.isPlayer &&
+        !bullet.nearMissPlayed &&
+        playerPassDistance < player.radius + 34
+      ) {
+        bullet.nearMissPlayed = true;
+        AudioFx.whoosh();
+        screenShake = Math.max(screenShake, 1.8);
       }
     }
     bullets = bullets.filter((bullet) => bullet.alive);
@@ -1797,9 +1862,10 @@
 
   const drawBullets = () => {
     for (const bullet of bullets) {
-      const p = projectWorld(bullet.x, bullet.y, 27);
+      // 炮线按炮长眼高投影，弹丸在画面中保持水平的直线飞行，不随距离产生爬升弧线。
+      const p = projectWorld(bullet.x, bullet.y, EYE_HEIGHT);
       if (!p) continue;
-      const previous = projectWorld(bullet.px, bullet.py, 27);
+      const previous = projectWorld(bullet.px, bullet.py, EYE_HEIGHT);
       if (previous) {
         const trailTone = bullet.isPlayer ? "214,190,132" : "189,139,84";
         for (let i = 1; i <= 3; i += 1) {
@@ -1977,7 +2043,7 @@
     ctx.fillText("战术雷达", MINIMAP.x + 10, MINIMAP.y + 16);
     ctx.fillStyle = "rgba(205,220,168,.62)";
     ctx.textAlign = "right";
-    ctx.fillText("800m", MINIMAP.x + MINIMAP.width - 10, MINIMAP.y + 16);
+    ctx.fillText("1500m", MINIMAP.x + MINIMAP.width - 10, MINIMAP.y + 16);
 
     ctx.save();
     ctx.beginPath();
@@ -2299,7 +2365,7 @@
       Math.abs(player.speed) / player.type.maxForward,
       Math.max(Math.abs(player.strafeSpeed) / player.type.maxStrafe, hullTurnSignal * 0.55)
     );
-    setText("hud-zoom", player.aiming ? "1.7×" : "1×");
+    setText("hud-zoom", player.aiming ? AIM_ZOOM.toFixed(1) + "×" : "1×");
     const syncLabel = $("sync-status");
     if (syncLabel) {
       if (typeof navigator !== "undefined" && navigator.onLine === false) syncLabel.textContent = "离线 · 本机存档";
@@ -2571,7 +2637,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=10").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=11").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2835,6 +2901,10 @@
       if (player) player.turretAngle = Math.atan2(y - player.y, x - player.x);
     },
     fire: () => firePlayer(),
+    playNearMissSound: () => {
+      AudioFx.whoosh();
+      return AudioFx.info();
+    },
     projectEnemy: (id) => {
       const enemy = enemies.find((item) => item.id === id);
       const p = enemy ? projectedEnemy(enemy) : null;
