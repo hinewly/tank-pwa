@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.1.1";
+  const APP_VERSION = "v0.1.2";
   const $ = (id) => document.getElementById(id);
   const TAU = Math.PI * 2;
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -26,6 +26,7 @@
   let rings = [];
   let tracks = [];
   let spawnedEnemies = 0;
+  let nextEnemyId = 1;
   let kills = 0;
   let score = 0;
   let combo = 0;
@@ -35,7 +36,6 @@
   let shotsFired = 0;
   let shotsHit = 0;
   let spawnTimer = 0;
-  let trackTimer = 0;
   let lastFrame = performance.now();
   let locked = false;
   let pausedByVisibility = false;
@@ -355,35 +355,38 @@
   // ---------- 实体 ----------
   const makeTank = (typeId, x, y, angle, isPlayer) => {
     const type = TANK_TYPES[typeId];
-    return {
+    const tank = {
       type,
       isPlayer,
+      fixed: !isPlayer,
       x,
       y,
       angle,
       turretAngle: angle,
       targetAim: angle,
-      speed: 0,
-      throttle: 0,
-      steer: 0,
-      fireHeld: false,
       fireCooldown: 0,
       reload: 0,
       reloadDuration: isPlayer ? B.playerReload : B.enemyReload,
       ammo: B.magazineSize,
+      shotsFired: 0,
       hp: isPlayer ? B.playerHp : B.enemyHp,
       maxHp: isPlayer ? B.playerHp : B.enemyHp,
       radius: type.radius,
       alive: true,
       recoil: 0,
-      hitFlash: 0,
-      odometer: 0,
-      trackClock: 0,
-      aiTimer: 0.1 + Math.random() * 0.7,
-      aiAvoid: Math.random() < 0.5 ? -1 : 1,
-      aiJitter: (Math.random() - 0.5) * 0.11,
-      aiHold: Math.random() * 0.8
+      hitFlash: 0
     };
+    if (isPlayer) {
+      tank.speed = 0;
+      tank.throttle = 0;
+      tank.steer = 0;
+      tank.fireHeld = false;
+      tank.odometer = 0;
+      tank.trackClock = 0;
+    } else {
+      tank.aimBias = (Math.random() - 0.5) * B.enemyAimBias;
+    }
+    return tank;
   };
 
   const resetBattle = () => {
@@ -412,8 +415,8 @@
     shotsFired = 0;
     shotsHit = 0;
     spawnedEnemies = 0;
+    nextEnemyId = 1;
     spawnTimer = 1.2;
-    trackTimer = 0;
     screenShake = 0;
     damageFlash = 0;
     battleEndedAt = 0;
@@ -435,10 +438,11 @@
   const spawnEnemy = (spawn) => {
     const slot = spawnedEnemies % B.enemyTotal;
     const source = spawn || D.cloneSpawns()[slot];
-    const enemy = makeTank("tiger", source.x, source.y, Math.PI, false);
+    const enemy = makeTank("tiger", source.x, source.y, 0, false);
     enemy.slot = slot;
+    enemy.id = "enemy-" + nextEnemyId;
+    nextEnemyId += 1;
     enemy.reload = 0.7 + Math.random() * 1.2;
-    enemy.targetAim = Math.PI;
     if (!tankAtPositionFree(enemy, enemy.x, enemy.y)) {
       for (let attempt = 0; attempt < 16; attempt += 1) {
         const angle = (attempt / 16) * TAU;
@@ -452,6 +456,13 @@
         }
       }
     }
+    // 固定炮台：车体朝向在生成时确定，此后 x/y/angle 永不变化。
+    enemy.angle = Math.atan2(
+      WORLD.height / 2 - enemy.y,
+      WORLD.width * 0.22 - enemy.x
+    );
+    enemy.turretAngle = enemy.angle;
+    enemy.targetAim = enemy.angle;
     enemies.push(enemy);
     spawnedEnemies += 1;
   };
@@ -642,91 +653,36 @@
     );
 
     player.fireHeld = fire;
-    updateTankTimers(player, dt);
+    updateWeaponTimers(player, dt);
     if (fire) tryFire(player);
   };
 
-  // ---------- AI ----------
-  const driveEnemy = (enemy, moveAngle, throttle, dt) => {
-    enemy.angle = rotateToward(enemy.angle, moveAngle, enemy.type.hullTurnRate * dt);
-    const limit = throttle >= 0 ? enemy.type.maxForward : enemy.type.maxReverse;
-    const target = throttle * limit;
-    enemy.speed = approach(enemy.speed, target, enemy.type.acceleration * dt);
-
-    let blocked = false;
-    const look = enemy.radius + 30;
-    for (const obstacle of obstacles) {
-      if (obstacle.destroyed || !obstacle.blocks) continue;
-      if (circleRectIntersects(
-        enemy.x + Math.cos(enemy.angle) * look,
-        enemy.y + Math.sin(enemy.angle) * look,
-        enemy.radius * 0.7,
-        obstacle
-      )) {
-        blocked = true;
-        break;
-      }
-    }
-    if (blocked) {
-      enemy.angle += enemy.aiAvoid * 0.75 * dt;
-      enemy.aiTimer -= dt * 2;
-    }
-
-    moveTank(
-      enemy,
-      Math.cos(enemy.angle) * enemy.speed * dt,
-      Math.sin(enemy.angle) * enemy.speed * dt
-    );
-  };
-
+  // ---------- 固定炮台 ----------
   const updateEnemy = (enemy, dt) => {
     if (!enemy.alive || !player || !player.alive) return;
-    enemy.aiTimer -= dt;
-    enemy.aiHold -= dt;
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const dist = Math.hypot(dx, dy);
     const toPlayer = Math.atan2(dy, dx);
     const visible = !lineBlocked(enemy.x, enemy.y, player.x, player.y);
-    const targetAim = toPlayer + enemy.aiJitter;
+    const inRange = dist <= B.enemyRange;
+    const targetAim = toPlayer + enemy.aimBias;
     enemy.targetAim = targetAim;
     enemy.turretAngle = rotateToward(enemy.turretAngle, targetAim, enemy.type.turretTurnRate * dt);
-    updateTankTimers(enemy, dt);
-
-    if (visible) {
-      if (dist < 230) {
-        driveEnemy(enemy, toPlayer + Math.PI, -0.58, dt);
-      } else if (dist > 570) {
-        driveEnemy(enemy, toPlayer, 0.72, dt);
-      } else {
-        const strafe = toPlayer + Math.PI / 2 * enemy.aiAvoid;
-        driveEnemy(enemy, strafe, enemy.reload > 0.4 ? 0.52 : 0.22, dt);
-        if (enemy.aiTimer <= 0) {
-          enemy.aiAvoid *= -1;
-          enemy.aiTimer = 1.6 + Math.random() * 1.4;
-        }
-      }
-      const turretError = Math.abs(angleDelta(enemy.turretAngle, toPlayer));
-      if (turretError < 0.065 && dist < 900 && enemy.reload <= 0 && enemy.ammo > 0) {
-        tryFire(enemy);
-      }
-    } else {
-      if (enemy.aiTimer <= 0 && Math.random() < 0.5) {
-        enemy.aiAvoid *= -1;
-        enemy.aiTimer = 1.2 + Math.random() * 1.8;
-      }
-      const blended = toPlayer + Math.sin(enemy.aiTimer * 1.8) * 0.16;
-      driveEnemy(enemy, blended, 0.82, dt);
+    updateWeaponTimers(enemy, dt);
+    if (!visible || !inRange) return;
+    const turretError = Math.abs(angleDelta(enemy.turretAngle, toPlayer));
+    if (turretError < 0.065 && enemy.reload <= 0 && enemy.ammo > 0) {
+      tryFire(enemy);
     }
   };
 
   // ---------- 战斗 ----------
-  const updateTankTimers = (tank, dt) => {
+  const updateWeaponTimers = (tank, dt) => {
     if (!tank) return;
     tank.fireCooldown = Math.max(0, tank.fireCooldown - dt);
     tank.recoil = Math.max(0, tank.recoil - dt * 28);
     tank.hitFlash = Math.max(0, tank.hitFlash - dt * 4);
-    tank.trackClock += Math.abs(tank.speed) * dt;
     if (tank.reload > 0) {
       tank.reload = Math.max(0, tank.reload - dt);
       if (tank.reload === 0) {
@@ -767,6 +723,7 @@
       trail: 0
     });
     tank.ammo -= 1;
+    tank.shotsFired += 1;
     tank.fireCooldown = B.fireCooldown;
     tank.recoil = 7;
     if (tank.ammo <= 0) {
@@ -874,6 +831,8 @@
     score += points;
     addFloat(tank.x, tank.y - 26, "+" + points + (combo > 1 ? "  ×" + combo : ""), "#f7e59a", 22);
     if (kills >= B.enemyTotal && enemies.length === 0) {
+      // 最后一辆敌车被击毁时清除在途敌弹，避免“敌军已清零但玩家死于旧弹”的结算竞态。
+      bullets = bullets.filter((bullet) => bullet.isPlayer);
       setTimeout(() => {
         if (state === "playing") finishBattle(true);
       }, 550);
@@ -985,7 +944,7 @@
     }
   };
 
-  const addTracks = (tank, dt) => {
+  const addTracks = (tank, dt, owner) => {
     tank.trackClock -= dt;
     if (Math.abs(tank.speed) < 18 || tank.trackClock > 0) return;
     tank.trackClock = 0.22;
@@ -998,6 +957,7 @@
       y1: tank.y - backY + sideY,
       x2: tank.x - backX - sideX,
       y2: tank.y - backY - sideY,
+      owner: owner || "player",
       life: 12
     });
     if (tracks.length > 220) tracks.splice(0, tracks.length - 220);
@@ -1144,7 +1104,7 @@
     ctx.fill();
     ctx.strokeStyle = colors.trackLine;
     ctx.lineWidth = 2;
-    const trackOffset = (tank.odometer * 0.26) % 12;
+    const trackOffset = ((tank.odometer || 0) * 0.26) % 12;
     for (let x = -halfL + 5 - trackOffset; x < halfL - 3; x += 12) {
       ctx.beginPath();
       ctx.moveTo(x, -halfW - 3);
@@ -1514,7 +1474,7 @@
         '<div><span>命中率</span><strong>' + accuracy + "%</strong></div>" +
         '<div><span>用时</span><strong>' + duration + " 秒</strong></div>" +
       "</div>" +
-      '<p class="result-note">' + (won ? "装甲、炮线和掩体运用合格。下一局可以继续刷新战绩。" : "试着让车体正面迎敌，用侧移和掩体争取绕后射击窗口。") + "</p>";
+      '<p class="result-note">' + (won ? "固定炮台已全部清除，装甲、炮线与掩体运用合格。" : "观察固定炮台的射界，用车体正面承伤，再从侧后突破。") + "</p>";
     const body = $("result-body");
     if (body) body.innerHTML = html;
     setOverlay("result-modal", true);
@@ -1564,8 +1524,7 @@
           spawnTimer = B.spawnDelay;
         }
       }
-      if (player) addTracks(player, dt);
-      for (const enemy of enemies) addTracks(enemy, dt);
+      if (player) addTracks(player, dt, "player");
       updateCamera(dt);
       updateHud();
     }
@@ -1595,7 +1554,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=3").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -1735,8 +1694,20 @@
         ammo: player.ammo,
         reload: player.reload
       } : null,
-      enemies: enemies.map((enemy) => ({ x: enemy.x, y: enemy.y, hp: enemy.hp, angle: enemy.angle })),
+      enemies: enemies.map((enemy) => ({
+        id: enemy.id,
+        x: enemy.x,
+        y: enemy.y,
+        hp: enemy.hp,
+        angle: enemy.angle,
+        turretAngle: enemy.turretAngle,
+        ammo: enemy.ammo,
+        reload: enemy.reload,
+        shotsFired: enemy.shotsFired,
+        fixed: enemy.fixed
+      })),
       bullets: bullets.length,
+      tracks: tracks.map((track) => ({ owner: track.owner })),
       kills,
       score,
       obstacles: obstacles.map((obstacle) => ({ type: obstacle.type, hp: obstacle.hp, destroyed: obstacle.destroyed }))
@@ -1746,7 +1717,22 @@
     resumeGame,
     finishBattle,
     armorProfile,
-    spawnEnemyAt: (x, y) => spawnEnemy({ x, y }),
+    spawnEnemyAt: (x, y) => {
+      const before = nextEnemyId;
+      spawnEnemy({ x, y });
+      return enemies.find((enemy) => enemy.id === "enemy-" + before) || null;
+    },
+    setPlayerPosition: (x, y) => {
+      if (!player || !tankAtPositionFree(player, x, y)) return false;
+      player.x = x;
+      player.y = y;
+      return true;
+    },
+    setPlayerHp: (hp) => {
+      if (!player) return;
+      player.maxHp = Math.max(1, Number(hp) || 1);
+      player.hp = player.maxHp;
+    },
     aimAt: (x, y) => {
       if (player) player.turretAngle = Math.atan2(y - player.y, x - player.x);
     },

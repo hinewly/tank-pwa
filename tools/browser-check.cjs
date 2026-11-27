@@ -140,6 +140,51 @@ async function run() {
     await desktop.click("#btn-resume");
     await desktop.waitForTimeout(100);
     report.desktopResume = await desktop.evaluate(() => window.__tankTest.state);
+    await desktop.evaluate(() => {
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.spawnEnemyAt(900, 750);
+      window.__tankTest.setPlayerPosition(360, 650);
+    });
+    await desktop.waitForTimeout(180);
+    const fixedBefore = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    for (const position of [
+      { x: 360, y: 650, aimX: 900, aimY: 150 },
+      { x: 450, y: 850, aimX: 1200, aimY: 1200 },
+      { x: 360, y: 750, aimX: 900, aimY: 150 }
+    ]) {
+      await desktop.evaluate(({ x, y, aimX, aimY }) => {
+        window.__tankTest.setPlayerPosition(x, y);
+        window.__tankTest.aimAt(aimX, aimY);
+        window.__tankTest.fire();
+      }, position);
+      await desktop.waitForTimeout(260);
+    }
+    await desktop.waitForTimeout(4200);
+    const fixedAfter = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    const fixedBeforeById = new Map(fixedBefore.enemies.map((enemy) => [enemy.id, enemy]));
+    const survivors = fixedAfter.enemies.filter((enemy) => fixedBeforeById.has(enemy.id));
+    const maxPositionDrift = survivors.reduce((max, enemy) => {
+      const before = fixedBeforeById.get(enemy.id);
+      return Math.max(max, Math.hypot(enemy.x - before.x, enemy.y - before.y));
+    }, 0);
+    const maxHullAngleDrift = survivors.reduce((max, enemy) => {
+      const before = fixedBeforeById.get(enemy.id);
+      return Math.max(max, Math.abs(enemy.angle - before.angle));
+    }, 0);
+    const maxTurretTurn = survivors.reduce((max, enemy) => {
+      const before = fixedBeforeById.get(enemy.id);
+      return Math.max(max, Math.abs(enemy.turretAngle - before.turretAngle));
+    }, 0);
+    const enemyShots = survivors.reduce((sum, enemy) => sum + (enemy.shotsFired || 0), 0);
+    report.fixedTurret = {
+      survivors: survivors.length,
+      maxPositionDrift,
+      maxHullAngleDrift,
+      maxTurretTurn,
+      enemyShots,
+      enemyTracks: fixedAfter.tracks.filter((track) => track.owner === "enemy").length,
+      allFixedFlags: survivors.every((enemy) => enemy.fixed)
+    };
     await desktop.evaluate(() => window.__tankTest.eliminateAllEnemies());
     await desktop.waitForTimeout(850);
     report.desktopVictory = await desktop.evaluate(() => ({
@@ -321,13 +366,24 @@ async function run() {
   } finally {
     await browser.close();
   }
-  console.log(JSON.stringify(report, null, 2));
   const errors = [
     ...(report.desktopErrors || []),
       ...(report.portraitErrors || []),
     ...(report.mobileErrors || [])
   ].filter((entry) => !entry.includes("Failed to load resource") && !entry.includes("ERR_NAME_NOT_RESOLVED"));
-  if (errors.length) process.exitCode = 1;
+  const fixed = report.fixedTurret || {};
+  const fixedTurretPassed = (
+    fixed.survivors > 0 &&
+    fixed.maxPositionDrift < 1e-9 &&
+    fixed.maxHullAngleDrift < 1e-9 &&
+    fixed.maxTurretTurn > 0.05 &&
+    fixed.enemyShots > 0 &&
+    fixed.enemyTracks === 0 &&
+    fixed.allFixedFlags
+  );
+  report.assertions = { fixedTurretPassed };
+  console.log(JSON.stringify(report, null, 2));
+  if (errors.length || !fixedTurretPassed) process.exitCode = 1;
 }
 
 run().catch((error) => {

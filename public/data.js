@@ -1,6 +1,6 @@
 "use strict";
 
-// 游戏数值集中在此，后续平衡只改参数，不把魔数散进渲染与 AI。
+// 游戏数值集中在此，后续平衡只改参数，不把魔数散进渲染与炮台规则。
 window.TankData = (() => {
   const BATTLE = {
     enemyTotal: 10,
@@ -14,6 +14,8 @@ window.TankData = (() => {
     magazineSize: 5,
     playerReload: 2.25,
     enemyReload: 3.05,
+    enemyRange: 920,
+    enemyAimBias: 0.035,
     fireCooldown: 0.16,
     bulletSpeed: 980,
     battleSoftCap: 480,
@@ -59,11 +61,6 @@ window.TankData = (() => {
       turretLength: 24,
       barrelLength: 46,
       radius: 29,
-      maxForward: 112,
-      maxReverse: 58,
-      acceleration: 150,
-      brake: 220,
-      hullTurnRate: 1.35,
       turretTurnRate: 1.48,
       colors: {
         body: "#8b7149",
