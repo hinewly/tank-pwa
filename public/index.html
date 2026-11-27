@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=13">
+  <link rel="manifest" href="manifest.json?v=14">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.5.1</span>
+      <span class="version-badge" id="app-version">v0.5.2</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -73,6 +73,7 @@
       <span>炮塔 <b id="hud-turret-bearing">000°</b></span>
       <span>相对 <b id="hud-relative">0°</b></span>
       <span>运动 <b id="hud-motion">静止</b></span>
+      <span>俯仰 <b id="hud-pitch">0°</b></span>
       <span>视野 <b id="hud-zoom">1×</b></span>
       <span class="bearing-note" id="bearing-help">W 前进 · S 倒车 · A/D 左右转 · Q/E 横移 · 鼠标环视</span>
     </div>
@@ -261,9 +262,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=13"></script>
-  <script src="sync.js?v=13"></script>
-  <script src="game.js?v=13"></script>
+  <script src="data.js?v=14"></script>
+  <script src="sync.js?v=14"></script>
+  <script src="game.js?v=14"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {

@@ -217,28 +217,44 @@ async function run() {
     report.bulletPath = await desktop.evaluate(() => {
       const snapshot = window.__tankTest.getSnapshot();
       window.__tankTest.setViewYaw(0);
+      window.__tankTest.setViewPitch(0);
       const ys = [220, 620, 1120].map((distance) =>
         window.__tankTest.projectEyePoint(snapshot.player.x + distance, snapshot.player.y)?.y
       );
-      return { ys, maxDelta: Math.max(...ys) - Math.min(...ys), pitch: window.__tankTest.getSnapshot().player.pitch };
-    });
-    report.verticalLook = await desktop.evaluate(() => {
-      const canvas = document.getElementById("game");
-      const before = window.__tankTest.getSnapshot().player;
-      canvas.dispatchEvent(new MouseEvent("pointermove", {
-        bubbles: true,
-        clientX: 300,
-        clientY: 260,
-        movementX: 0,
-        movementY: 90
-      }));
-      const after = window.__tankTest.getSnapshot().player;
-      return {
-        pitchBefore: before.pitch,
-        pitchAfter: after.pitch,
-        yawDelta: Math.abs(after.turretAngle - before.turretAngle)
+      window.__tankTest.setViewPitch(0.08);
+      const highPoints = [220, 620, 1120].map((distance) =>
+        window.__tankTest.projectAimRayPoint(distance)
+      );
+      window.__tankTest.setViewPitch(-0.06);
+      const lowPoints = [220, 620, 1120].map((distance) =>
+        window.__tankTest.projectAimRayPoint(distance)
+      );
+      const result = {
+        ys,
+        maxDelta: Math.max(...ys) - Math.min(...ys),
+        highPitch: 0.08,
+        highYs: highPoints.map((point) => point && point.y),
+        highZs: highPoints.map((point) => point && point.z),
+        lowPitch: -0.06,
+        lowYs: lowPoints.map((point) => point && point.y),
+        lowZs: lowPoints.map((point) => point && point.z)
       };
+      window.__tankTest.setViewPitch(0);
+      return result;
     });
+    report.highShot = await desktop.evaluate(() => {
+      const target = window.__tankTest.getSnapshot().enemies[0];
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.aimAt(target.x, target.y);
+      window.__tankTest.setViewPitch(0.12);
+      const fired = window.__tankTest.fire();
+      return { id: target.id, fired, hpBefore: target.hp };
+    });
+    await desktop.waitForTimeout(1350);
+    report.highShot.hpAfter = await desktop.evaluate((id) =>
+      window.__tankTest.getSnapshot().enemies.find((enemy) => enemy.id === id)?.hp,
+      report.highShot.id
+    );
     const canvasBox = await desktop.locator("#game").boundingBox();
     const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
     report.cockpit = { base: cockpitBase };
@@ -1008,11 +1024,13 @@ async function run() {
     levels[1].obstacleTotal === 19 &&
     levels[2].enemyTotal === 10 &&
     levels[2].obstacleTotal === 37 &&
-    report.bulletPath.pitch === 0 &&
     report.bulletPath.maxDelta < 0.01 &&
-    report.verticalLook.pitchBefore === 0 &&
-    report.verticalLook.pitchAfter === 0 &&
-    report.verticalLook.yawDelta < 1e-9 &&
+    report.bulletPath.highYs.every((value) => Math.abs(value - 360) < 0.01) &&
+    report.bulletPath.lowYs.every((value) => Math.abs(value - 360) < 0.01) &&
+    report.bulletPath.highZs[2] > 72 &&
+    report.bulletPath.lowZs[2] < 0 &&
+    report.highShot.fired &&
+    report.highShot.hpAfter === report.highShot.hpBefore &&
     levelFlow.levelOneEnemies === 5 &&
     levelFlow.levelOneObstacles === 6 &&
     levelFlow.burningFirst?.alive &&

@@ -9,12 +9,13 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.1";
+  const APP_VERSION = "v0.5.2";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
   const AIM_ZOOM = 3.2;
   const AIM_MOUSE_SCALE = 0.48;
+  const PITCH_LIMIT = 0.12;
   const EYE_HEIGHT = 44;
   const $ = (id) => document.getElementById(id);
   const TAU = Math.PI * 2;
@@ -85,6 +86,7 @@
   let muted = !!(saveData && saveData.settings && saveData.settings.muted);
   let mouseDragging = false;
   let lastPointerX = 0;
+  let lastPointerY = 0;
   const keys = new Set();
   const touches = {
     left: { id: null, baseX: 0, baseY: 0, x: 0, y: 0, dx: 0, dy: 0, mag: 0 },
@@ -784,6 +786,9 @@
       y,
       px: x,
       py: y,
+      z: EYE_HEIGHT,
+      pz: EYE_HEIGHT,
+      vz: tank.isPlayer ? Math.tan(tank.pitch) * B.bulletSpeed : 0,
       vx: Math.cos(shotAngle) * B.bulletSpeed,
       vy: Math.sin(shotAngle) * B.bulletSpeed,
       owner: tank,
@@ -962,7 +967,7 @@
     if (touches.right.id !== null) {
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
       player.turretAngle = normalizeAngle(player.turretAngle + touches.right.dx * STICK_LOOK_SPEED * lookScale * dt);
-      player.pitch = 0;
+      player.pitch = clamp(player.pitch - touches.right.dy * 0.72 * dt, -PITCH_LIMIT, PITCH_LIMIT);
     }
     player.throttleInput = throttle;
     player.steerInput = steer;
@@ -1024,11 +1029,20 @@
       }
       bullet.px = bullet.x;
       bullet.py = bullet.y;
+      bullet.pz = bullet.z;
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
+      bullet.z += bullet.vz * dt;
       if (bullet.x < -20 || bullet.y < -20 || bullet.x > WORLD.width + 20 || bullet.y > WORLD.height + 20) {
         bullet.alive = false;
         if (bullet.isPlayer) showShotFeedback("炮弹飞出战场 · 未命中", "#eadba7");
+        continue;
+      }
+      if (bullet.z <= 0) {
+        bullet.alive = false;
+        addBurst(bullet.x, bullet.y, "#b59b69", 14, 110);
+        AudioFx.hit("front");
+        if (bullet.isPlayer) showShotFeedback("炮弹打进地面 · 未命中", "#e5c98b");
         continue;
       }
       let nearestT = 1;
@@ -1040,7 +1054,9 @@
       for (const obstacle of obstacles) {
         if (obstacle.destroyed || !obstacle.blocks) continue;
         const t = segmentRectHit(bullet.px, bullet.py, bullet.x, bullet.y, obstacle);
-        if (t !== null && t < nearestT) {
+        const impactZ = lerp(bullet.pz, bullet.z, t === null ? 0 : t);
+        const obstacleHeight = obstacle.meta ? obstacle.meta.height : 70;
+        if (t !== null && t < nearestT && impactZ >= 0 && impactZ <= obstacleHeight) {
           nearestT = t;
           hitType = "obstacle";
           hitTarget = obstacle;
@@ -1049,7 +1065,8 @@
       for (const tank of [player, ...enemies]) {
         if (!tank || !tank.alive || tank === bullet.owner) continue;
         const t = segmentCircleHit(bullet.px, bullet.py, bullet.x, bullet.y, tank.x, tank.y, tank.radius);
-        if (t !== null && t < nearestT) {
+        const impactZ = lerp(bullet.pz, bullet.z, t === null ? 0 : t);
+        if (t !== null && t < nearestT && impactZ >= 0 && impactZ <= 72) {
           nearestT = t;
           hitType = bullet.owner && bullet.owner.isPlayer === tank.isPlayer ? "friendly-tank" : "tank";
           hitTarget = tank;
@@ -1058,6 +1075,7 @@
       if (hitType) {
         bullet.x = lerp(bullet.px, bullet.x, nearestT);
         bullet.y = lerp(bullet.py, bullet.y, nearestT);
+        bullet.z = lerp(bullet.pz, bullet.z, nearestT);
         bullet.alive = false;
         if (hitType === "obstacle") damageObstacle(hitTarget, bullet);
         else if (hitType === "tank") damageTank(hitTarget, bullet);
@@ -1192,6 +1210,7 @@
       AudioFx.unlock();
       if (event.pointerType === "mouse" || event.pointerType === "pen") {
         lastPointerX = event.clientX;
+        lastPointerY = event.clientY;
         mouseDragging = true;
         if (event.button === 0) {
           firePlayer();
@@ -1222,12 +1241,22 @@
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
       if (document.pointerLockElement === canvas) {
         player.turretAngle = normalizeAngle(player.turretAngle + event.movementX * MOUSE_SENSITIVITY * lookScale);
-        player.pitch = 0;
+        player.pitch = clamp(
+          player.pitch - event.movementY * MOUSE_SENSITIVITY * 0.72 * lookScale,
+          -PITCH_LIMIT,
+          PITCH_LIMIT
+        );
       } else if (mouseDragging) {
         const dx = event.clientX - lastPointerX;
+        const dy = event.clientY - lastPointerY;
         player.turretAngle = normalizeAngle(player.turretAngle + dx * MOUSE_SENSITIVITY * lookScale);
+        player.pitch = clamp(
+          player.pitch - dy * MOUSE_SENSITIVITY * 0.72 * lookScale,
+          -PITCH_LIMIT,
+          PITCH_LIMIT
+        );
         lastPointerX = event.clientX;
-        player.pitch = 0;
+        lastPointerY = event.clientY;
       }
     }, { passive: false });
 
@@ -1286,7 +1315,8 @@
       const period = imageWidth * 2;
       const yawNorm = ((player.turretAngle + Math.PI) % TAU + TAU) % TAU;
       const offset = -(yawNorm / TAU) * period;
-      const pitchShift = Math.tan(player.pitch) * currentFocal() * 0.38;
+      // 背景地平线与世界地面共用同一俯仰位移，避免上下瞄准时坦克脱离地面。
+      const pitchShift = Math.tan(player.pitch) * currentFocal();
       ctx.fillStyle = "#8ca0a0";
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
       ctx.save();
@@ -2108,10 +2138,10 @@
 
   const drawBullets = () => {
     for (const bullet of bullets) {
-      // 炮线按炮长眼高投影，弹丸在画面中保持水平的直线飞行，不随距离产生爬升弧线。
-      const p = projectWorld(bullet.x, bullet.y, EYE_HEIGHT);
+      // 弹丸按真实俯仰高度投影，弹体朝向使用屏幕轨迹角，不能拿世界水平角硬转。
+      const p = projectWorld(bullet.x, bullet.y, bullet.z);
       if (!p) continue;
-      const previous = projectWorld(bullet.px, bullet.py, EYE_HEIGHT);
+      const previous = projectWorld(bullet.px, bullet.py, bullet.pz);
       if (previous) {
         const trailTone = bullet.isPlayer ? "214,190,132" : "189,139,84";
         for (let i = 1; i <= 3; i += 1) {
@@ -2132,7 +2162,9 @@
       }
       const shellLength = clamp(8 * p.scale, 4, 14);
       const shellHeight = clamp(3.2 * p.scale, 1.4, 5);
-      const angle = Math.atan2(bullet.vy, bullet.vx);
+      const angle = previous
+        ? Math.atan2(p.y - previous.y, p.x - previous.x)
+        : Math.atan2(bullet.vy, bullet.vx);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(angle);
@@ -2659,6 +2691,7 @@
     setText("hud-hull-bearing", compassText(player.angle));
     setText("hud-turret-bearing", compassText(player.turretAngle));
     setText("hud-relative", Math.round(relativeDegrees(angleDelta(player.angle, player.turretAngle))) + "°");
+    setText("hud-pitch", Math.round(player.pitch * 180 / Math.PI) + "°");
     const motionElement = $("hud-motion");
     if (motionElement) {
       const speedPercent = Math.round(clamp(Math.abs(player.speed) / player.type.maxForward, 0, 1) * 100);
@@ -3004,7 +3037,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=13").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=14").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3274,6 +3307,9 @@
     setViewYaw: (angle) => {
       if (player) player.turretAngle = normalizeAngle(Number(angle) || 0);
     },
+    setViewPitch: (angle) => {
+      if (player) player.pitch = clamp(Number(angle) || 0, -PITCH_LIMIT, PITCH_LIMIT);
+    },
     setAiming: (value) => {
       if (!player) return;
       player.aiming = !!value;
@@ -3307,6 +3343,16 @@
     projectEyePoint: (x, y) => {
       const p = projectWorld(x, y, EYE_HEIGHT);
       return p ? { x: p.x, y: p.y, depth: p.depth, scale: p.scale } : null;
+    },
+    projectAimRayPoint: (distance) => {
+      if (!player) return null;
+      const z = EYE_HEIGHT + Math.tan(player.pitch) * distance;
+      const p = projectWorld(
+        player.x + Math.cos(player.turretAngle) * distance,
+        player.y + Math.sin(player.turretAngle) * distance,
+        z
+      );
+      return p ? { x: p.x, y: p.y, z, depth: p.depth, scale: p.scale } : null;
     },
     minimapInfo: () => ({
       visible: !!player,
