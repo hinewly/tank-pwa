@@ -138,7 +138,81 @@ async function run() {
     await desktop.click("#btn-gallery-close");
     await desktop.waitForTimeout(100);
 
+    report.levels = await desktop.evaluate(() => {
+      const result = [];
+      for (let index = 0; index < 3; index += 1) {
+        window.__tankTest.selectLevel(index);
+        const snapshot = window.__tankTest.getSnapshot();
+        result.push({
+          index,
+          label: snapshot.level.label,
+          title: snapshot.level.title,
+          enemyTotal: snapshot.level.enemyTotal,
+          obstacleTotal: snapshot.level.obstacleTotal
+        });
+      }
+      window.__tankTest.selectLevel(0);
+      return result;
+    });
+
+    await desktop.click('[data-level="0"]');
     await desktop.click("#btn-start");
+    await desktop.waitForTimeout(500);
+    const levelOneStart = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const enemy = snapshot.enemies[0];
+      window.__tankTest.aimAt(enemy.x, enemy.y);
+      return snapshot;
+    });
+    const burningFirst = await desktop.evaluate(() => window.__tankTest.damageEnemyForTest("enemy-1", 30));
+    await desktop.waitForTimeout(350);
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-虎式受损起火-20261128.png"),
+        fullPage: true
+      });
+    }
+    const burningSecond = await desktop.evaluate(() => window.__tankTest.damageEnemyForTest("enemy-1", 999));
+    await desktop.waitForTimeout(250);
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-虎式烧毁残骸-20261128.png"),
+        fullPage: true
+      });
+    }
+    await desktop.evaluate(() => window.__tankTest.pauseGame(false));
+    await desktop.waitForTimeout(120);
+    const pauseRestartVisible = await desktop.evaluate(() =>
+      !!document.getElementById("btn-restart-level") &&
+      !document.getElementById("btn-restart-level").classList.contains("hidden")
+    );
+    await desktop.click("#btn-restart-level");
+    await desktop.waitForTimeout(450);
+    const restartedLevel = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.levelFlow = {
+      levelOneEnemies: levelOneStart.enemyCount,
+      levelOneObstacles: levelOneStart.level.obstacleTotal,
+      burningFirst,
+      burningSecond,
+      pauseRestartVisible,
+      restartedLevel: restartedLevel.level,
+      restartedEnemies: restartedLevel.enemyCount,
+      restartedKills: restartedLevel.kills
+    };
+
+    await desktop.evaluate(() => window.__tankTest.eliminateAllEnemies());
+    await desktop.waitForTimeout(850);
+    report.levelNext = await desktop.evaluate(() => ({
+      state: window.__tankTest.state,
+      nextVisible: !document.getElementById("btn-next-level").classList.contains("hidden"),
+      nextText: document.getElementById("btn-next-level").textContent,
+      title: document.getElementById("result-title").textContent
+    }));
+    await desktop.click("#btn-next-level");
+    await desktop.waitForTimeout(350);
+    report.levelNext.started = await desktop.evaluate(() => window.__tankTest.getSnapshot().level);
+
+    await desktop.evaluate(() => window.__tankTest.startBattle(2));
     await desktop.waitForTimeout(500);
     const canvasBox = await desktop.locator("#game").boundingBox();
     const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
@@ -311,6 +385,7 @@ async function run() {
     }
     await desktop.mouse.up({ button: "right" });
     const beforeMove = initial.player;
+    const idleAudio = await desktop.evaluate(() => window.__tankTest.getSnapshot().audio);
     await desktop.keyboard.down("w");
     await desktop.waitForTimeout(600);
     const desktopMoving = await desktop.evaluate(() => ({
@@ -324,6 +399,10 @@ async function run() {
       });
     }
     await desktop.keyboard.up("w");
+    report.engineAudio = {
+      idle: idleAudio,
+      moving: desktopMoving.snapshot.audio
+    };
     await desktop.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })));
     await desktop.waitForTimeout(320);
     await desktop.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true })));
@@ -367,6 +446,27 @@ async function run() {
       hud: strafeMid.hud
     };
 
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(100);
+    const reverseStart = await desktop.evaluate(() => window.__tankTest.getSnapshot().player);
+    await desktop.keyboard.down("s");
+    await desktop.waitForTimeout(620);
+    await desktop.keyboard.up("s");
+    const reverseEnd = await desktop.evaluate(() => window.__tankTest.getSnapshot().player);
+    report.reverseControl = {
+      moved: Math.hypot(reverseEnd.x - reverseStart.x, reverseEnd.y - reverseStart.y),
+      reverseDistance: (
+        (reverseEnd.x - reverseStart.x) * Math.cos(reverseStart.angle) +
+        (reverseEnd.y - reverseStart.y) * Math.sin(reverseStart.angle)
+      ),
+      speed: reverseEnd.speed
+    };
+
+    report.coverDurability = await desktop.evaluate(() => ({
+      wood: window.__tankTest.damageObstacleOfType("wood"),
+      sandbag: window.__tankTest.damageObstacleOfType("sandbag"),
+      earth: window.__tankTest.damageObstacleOfType("earth")
+    }));
     report.combat = await desktop.evaluate(() => {
       const tank = { angle: Math.PI };
       const front = window.__tankTest.armorProfile(tank, 0);
@@ -430,7 +530,8 @@ async function run() {
       const snapshot = window.__tankTest.getSnapshot();
       return {
         enemy: snapshot.enemies.find((enemy) => enemy.id === target.id),
-        player: snapshot.player
+        player: snapshot.player,
+        shotFeedback: snapshot.shotFeedback
       };
     }, projectionTarget);
     await desktop.mouse.up({ button: "right" });
@@ -443,6 +544,7 @@ async function run() {
       closerScaleGrew: !!(projectionBefore && projectionAfter && projectionAfter.scale > projectionBefore.scale),
       aimedShotHit: !!(aimCombatEnd.enemy && aimCombatEnd.enemy.hp < 92),
       targetHpAfterShot: aimCombatEnd.enemy && aimCombatEnd.enemy.hp,
+      shotFeedback: aimCombatEnd.shotFeedback,
       aimingDuringShot: aimCombatStart.player.aiming && aimCombatEnd.player.aiming,
       movedWhileAiming: Math.hypot(
         aimCombatEnd.player.x - aimCombatStart.player.x,
@@ -603,6 +705,7 @@ async function run() {
     const mobileErrors = collectPageErrors(mobile);
     await mobile.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await mobile.waitForTimeout(1500);
+    await mobile.evaluate(() => window.__tankTest.selectLevel(2));
     await mobile.click("#btn-start");
     await mobile.waitForTimeout(450);
     const mobileCockpitBase = await mobile.evaluate(() => window.__tankTest.cockpitInfo());
@@ -860,6 +963,11 @@ async function run() {
   const singleShot = report.singleShot || {};
   const easyCombat = report.easyCombat || {};
   const desktopStrafe = report.desktopStrafe || {};
+  const levels = report.levels || [];
+  const levelFlow = report.levelFlow || {};
+  const levelNext = report.levelNext || {};
+  const coverDurability = report.coverDurability || {};
+  const reverseControl = report.reverseControl || {};
   const cockpitBase = cockpit.base || {};
   const cockpitAim = cockpit.aim || {};
   const passed = (
@@ -868,6 +976,28 @@ async function run() {
     gallery.backdrops === 4 &&
     Object.values(backdrops).length === 4 &&
     Object.values(backdrops).every((item) => item.ready && item.selected) &&
+    levels.length === 3 &&
+    levels[0].enemyTotal === 5 &&
+    levels[0].obstacleTotal === 6 &&
+    levels[1].enemyTotal === 8 &&
+    levels[1].obstacleTotal === 19 &&
+    levels[2].enemyTotal === 10 &&
+    levels[2].obstacleTotal === 37 &&
+    levelFlow.levelOneEnemies === 5 &&
+    levelFlow.levelOneObstacles === 6 &&
+    levelFlow.burningFirst?.alive &&
+    levelFlow.burningFirst?.burning &&
+    /起火/.test(levelFlow.burningFirst?.feedback || "") &&
+    levelFlow.burningSecond?.alive === false &&
+    levelFlow.burningSecond?.wrecks === 1 &&
+    levelFlow.pauseRestartVisible &&
+    levelFlow.restartedLevel?.index === 0 &&
+    levelFlow.restartedEnemies === 5 &&
+    levelFlow.restartedKills === 0 &&
+    levelNext.state === "result" &&
+    levelNext.nextVisible &&
+    levelNext.started?.index === 1 &&
+    levelNext.started?.enemyTotal === 8 &&
     range.range === 1500 &&
     range.playerRange === 1500 &&
     range.playerReload === 0.8 &&
@@ -917,18 +1047,38 @@ async function run() {
     !report.desktopPlay.audio.muted &&
     report.desktopPlay.audio.state === "running" &&
     report.desktopPlay.audio.engineActive &&
+    report.desktopPlay.audio.cannonSampleLoaded &&
+    report.desktopPlay.audio.events.sampleShots > 0 &&
+    report.engineAudio.idle.engineSampleLoaded &&
+    report.engineAudio.moving.engineSampleLoaded &&
+    report.engineAudio.moving.engineMode === "sample" &&
+    report.engineAudio.moving.engineGain > report.engineAudio.idle.engineGain + 0.01 &&
     report.nearMissAudio.state === "running" &&
     report.nearMissAudio.events.nearMisses > 0 &&
     desktopStrafe.moved > 8 &&
     desktopStrafe.strafeSpeed > 20 &&
     /右移/.test(desktopStrafe.hud.text) &&
+    reverseControl.moved > 8 &&
+    reverseControl.reverseDistance < -8 &&
+    reverseControl.speed < 0 &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
+    coverDurability.wood?.before === 160 &&
+    coverDurability.wood?.after === 80 &&
+    coverDurability.wood?.destroyed === false &&
+    /挡住炮弹/.test(coverDurability.wood?.feedback || "") &&
+    coverDurability.sandbag?.before === 240 &&
+    coverDurability.sandbag?.after === 160 &&
+    coverDurability.sandbag?.destroyed === false &&
+    coverDurability.earth?.before === 360 &&
+    coverDurability.earth?.after === 280 &&
+    coverDurability.earth?.destroyed === false &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
     ring.total === 10 &&
     ring.seen === 10 &&
     projection.closerScaleGrew &&
     projection.aimedShotHit &&
+    /命中/.test(projection.shotFeedback?.text || "") &&
     projection.aimingDuringShot &&
     projection.movedWhileAiming &&
     report.pcAim.open &&

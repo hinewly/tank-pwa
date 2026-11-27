@@ -10,6 +10,7 @@ const { chromium } = require(
 const BASE_URL = process.env.TANK_URL || "http://127.0.0.1:8811/tank/";
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const SHOT_DIR = process.env.TANK_SHOT_DIR || "";
+const LEVEL_INDEX = Number(process.env.TANK_LEVEL || 2);
 
 async function snapshot(page) {
   return page.evaluate(() => ({
@@ -24,15 +25,17 @@ async function run() {
   try {
     await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForFunction(() => window.__tankTest && window.__tankTest.state === "menu");
+    await page.evaluate((index) => window.__tankTest.selectLevel(index), LEVEL_INDEX);
     await page.click("#btn-start");
     await page.waitForTimeout(200);
+    const levelInfo = await page.evaluate(() => window.__tankTest.getSnapshot().level);
     await page.evaluate(() => window.__tankTest.setPlayerPosition(1480, 1730));
 
     let shots = 0;
     let repositioned = false;
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const current = await snapshot(page);
-      if (current.game.state !== "playing" || current.game.kills >= 10) break;
+      if (current.game.state !== "playing" || current.game.kills >= levelInfo.enemyTotal) break;
       if (!current.clearIds.length) {
         const moved = await page.evaluate(() => {
           for (let x = 300; x <= 2700; x += 60) {
@@ -63,11 +66,13 @@ async function run() {
     if (SHOT_DIR) {
       fs.mkdirSync(SHOT_DIR, { recursive: true });
       await page.screenshot({
-        path: path.join(SHOT_DIR, "新手实弹通关-20261127.png"),
+        path: path.join(SHOT_DIR, `第${levelInfo.index + 1}关-实弹通关-20261128.png`),
         fullPage: true
       });
     }
     const report = {
+      level: levelInfo.title,
+      enemyTotal: levelInfo.enemyTotal,
       state: result.game.state,
       kills: result.game.kills,
       enemyCount: result.game.enemyCount,
@@ -76,7 +81,7 @@ async function run() {
       repositioned
     };
     console.log(JSON.stringify(report, null, 2));
-    if (result.game.kills < 10 || result.game.state !== "result" || report.playerHp <= 0) {
+      if (result.game.kills < levelInfo.enemyTotal || result.game.state !== "result" || report.playerHp <= 0) {
       process.exitCode = 1;
     }
   } finally {

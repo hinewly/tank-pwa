@@ -149,6 +149,61 @@ window.TankData = (() => {
     { x: 2400, y: 1900 }
   ];
 
+  // 第一关使用独立稀疏工事：只保留少量可读掩体，避免新手在复杂地图中找不到目标。
+  const LEVEL_ONE_OBSTACLES = [
+    { x: 1260, y: 1120, w: 160, h: 40, type: "wood" },
+    { x: 1660, y: 1080, w: 60, h: 140, type: "concrete" },
+    { x: 1150, y: 1400, w: 130, h: 38, type: "earth" },
+    { x: 1730, y: 1470, w: 180, h: 36, type: "sandbag" },
+    { x: 1390, y: 1600, w: 150, h: 40, type: "wood" },
+    { x: 1850, y: 1280, w: 40, h: 120, type: "concrete" }
+  ];
+
+  const LEVELS = [
+    {
+      id: "outpost",
+      label: "第 1 关",
+      title: "前哨接触",
+      hint: "5 辆虎式 · 稀疏掩体 · 快速战斗",
+      intro: "北侧前哨只有 5 辆虎式，掩体稀疏。先用宽视野找目标，再按右键开镜逐个清除。",
+      enemyTotal: 5,
+      spawns: [
+        { x: 1000, y: 750 },
+        { x: 1250, y: 520 },
+        { x: 1500, y: 450 },
+        { x: 1750, y: 520 },
+        { x: 2000, y: 750 }
+      ]
+    },
+    {
+      id: "advance",
+      label: "第 2 关",
+      title: "装甲推进",
+      hint: "8 辆虎式 · 半场工事 · 增加换位压力",
+      intro: "敌军增加到 8 辆，掩体只保留约一半。利用混凝土挡炮，再寻找侧面或后部装甲窗口。",
+      enemyTotal: 8,
+      spawns: [
+        { x: 700, y: 900 },
+        { x: 1000, y: 500 },
+        { x: 1500, y: 350 },
+        { x: 2000, y: 500 },
+        { x: 2300, y: 900 },
+        { x: 1000, y: 1700 },
+        { x: 1500, y: 2050 },
+        { x: 2000, y: 1700 }
+      ]
+    },
+    {
+      id: "encirclement",
+      label: "第 3 关",
+      title: "十面合围",
+      hint: "10 辆虎式 · 完整工事 · 最终合围",
+      intro: "完整工事与 10 辆虎式同时启用。先侦察威胁方位，再用炮长镜、横移和残骸掩护完成清场。",
+      enemyTotal: 10,
+      spawns: SPAWNS
+    }
+  ];
+
   const OBSTACLE_TYPES = {
     concrete: {
       label: "混凝土",
@@ -161,7 +216,7 @@ window.TankData = (() => {
     },
     wood: {
       label: "木制掩体",
-      hp: 58,
+      hp: 160,
       destructible: true,
       height: 44,
       fill: "#8a5a32",
@@ -170,7 +225,7 @@ window.TankData = (() => {
     },
     sandbag: {
       label: "沙袋",
-      hp: 92,
+      hp: 240,
       destructible: true,
       height: 30,
       fill: "#9b8652",
@@ -179,7 +234,7 @@ window.TankData = (() => {
     },
     earth: {
       label: "土堆",
-      hp: 108,
+      hp: 360,
       destructible: true,
       height: 38,
       fill: "#806039",
@@ -290,17 +345,27 @@ window.TankData = (() => {
     forest: { label: "稀疏林地", src: "assets/backdrops/sparse-forest.webp" }
   };
 
-  const cloneObstacles = () => OBSTACLES.map((o) => ({
-    ...o,
-    x: o.x + OBSTACLE_OFFSET.x,
-    y: o.y + OBSTACLE_OFFSET.y
-  }));
-  const cloneSpawns = () => SPAWNS.map((s) => ({ ...s }));
+  const cloneObstacles = (levelIndex = 2) => {
+    if (levelIndex === 0) return LEVEL_ONE_OBSTACLES.map((o) => ({ ...o }));
+    const source = levelIndex === 1
+      ? OBSTACLES.filter((_, index) => index % 2 === 0)
+      : OBSTACLES;
+    return source.map((o) => ({
+      ...o,
+      x: o.x + OBSTACLE_OFFSET.x,
+      y: o.y + OBSTACLE_OFFSET.y
+    }));
+  };
+  const cloneSpawns = (levelIndex = 2) => {
+    const level = LEVELS[levelIndex] || LEVELS[LEVELS.length - 1];
+    return level.spawns.map((spawn) => ({ ...spawn }));
+  };
 
   return {
     BATTLE,
     TANKS,
     WORLD,
+    LEVELS,
     OBSTACLE_TYPES,
     COVER_ART,
     TANK_ART,

@@ -6,9 +6,10 @@
   const B = D.BATTLE;
   const WORLD = D.WORLD;
   const TANK_TYPES = D.TANKS;
+  const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.4.2";
+  const APP_VERSION = "v0.5.0";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -55,6 +56,8 @@
   let floats = [];
   let rings = [];
   let nextEnemyId = 1;
+  let levelIndex = 0;
+  let lastBattleWon = false;
   let kills = 0;
   let score = 0;
   let combo = 0;
@@ -69,6 +72,7 @@
   let damageFlash = 0;
   let hitMarker = 0;
   let cockpitMuzzleFlash = 0;
+  let shotFeedback = null;
   let hullBobPhase = 0;
   let hullBobX = 0;
   let hullBobY = 0;
@@ -92,6 +96,7 @@
   // ---------- 工具 ----------
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const currentLevel = () => LEVELS[levelIndex] || LEVELS[0];
   const normalizeAngle = (angle) => {
     while (angle > Math.PI) angle -= TAU;
     while (angle < -Math.PI) angle += TAU;
@@ -189,12 +194,22 @@
   const AudioFx = (() => {
     let audio = null;
     let engine = null;
+    let engineSample = null;
     let master = null;
+    const sampleBuffers = new Map();
+    const sampleLoading = new Map();
+    let sampleErrors = 0;
+    const SOUND_FILES = {
+      cannon: "assets/audio/tank-cannon.mp3",
+      engine: "assets/audio/tank-engine-loop.mp3"
+    };
     const events = {
       playerShots: 0,
       enemyShots: 0,
       nearMisses: 0,
-      hits: 0
+      hits: 0,
+      sampleShots: 0,
+      fallbackShots: 0
     };
     const get = () => {
       if (!audio) {
@@ -224,6 +239,52 @@
       }
       return master;
     };
+    const loadSample = (name) => {
+      const ac = get();
+      if (!ac || !SOUND_FILES[name]) return Promise.resolve(null);
+      if (sampleBuffers.has(name)) return Promise.resolve(sampleBuffers.get(name));
+      if (sampleLoading.has(name)) return sampleLoading.get(name);
+      const pending = fetch(SOUND_FILES[name], { cache: "force-cache" })
+        .then((response) => {
+          if (!response.ok) throw new Error("sample load failed");
+          return response.arrayBuffer();
+        })
+        .then((data) => ac.decodeAudioData(data))
+        .then((buffer) => {
+          sampleBuffers.set(name, buffer);
+          return buffer;
+        })
+        .catch(() => {
+          sampleErrors += 1;
+          return null;
+        })
+        .finally(() => sampleLoading.delete(name));
+      sampleLoading.set(name, pending);
+      return pending;
+    };
+    const playSample = (name, volume, playbackRate = 1, pan = 0, cutoff = 4800) => {
+      const ac = get();
+      const buffer = sampleBuffers.get(name);
+      if (!ac || !buffer || muted) return false;
+      const source = ac.createBufferSource();
+      const gain = ac.createGain();
+      const filter = ac.createBiquadFilter();
+      const stereo = ac.createStereoPanner ? ac.createStereoPanner() : null;
+      source.buffer = buffer;
+      source.playbackRate.value = playbackRate;
+      filter.type = "lowpass";
+      filter.frequency.value = cutoff;
+      gain.gain.value = volume;
+      source.connect(filter).connect(gain);
+      if (stereo) {
+        stereo.pan.value = clamp(pan, -1, 1);
+        gain.connect(stereo).connect(ensureMaster(ac));
+      } else {
+        gain.connect(ensureMaster(ac));
+      }
+      source.start();
+      return true;
+    };
     const ensureEngine = () => {
       const ac = get();
       if (!ac) return null;
@@ -247,6 +308,25 @@
         engine = { ac, low, high, filter, gain };
       }
       return engine;
+    };
+    const ensureEngineSample = () => {
+      const ac = get();
+      const buffer = sampleBuffers.get("engine");
+      if (!ac || !buffer) return null;
+      if (!engineSample) {
+        const source = ac.createBufferSource();
+        const filter = ac.createBiquadFilter();
+        const gain = ac.createGain();
+        source.buffer = buffer;
+        source.loop = true;
+        filter.type = "lowpass";
+        filter.frequency.value = 720;
+        gain.gain.value = 0;
+        source.connect(filter).connect(gain).connect(ensureMaster(ac));
+        source.start();
+        engineSample = { ac, source, filter, gain };
+      }
+      return engineSample;
     };
     const tone = (from, to, duration, type, volume, delay = 0) => {
       const ac = get();
@@ -292,19 +372,35 @@
     return {
       unlock: () => {
         const ac = get();
-        if (ac) ensureEngine();
+        if (ac) {
+          ensureEngine();
+          loadSample("cannon");
+          loadSample("engine");
+        }
         return ac;
       },
-      setEngine: (active, speedRatio = 0, turnRatio = 0) => {
+      setEngine: (active, speedRatio = 0, turnRatio = 0, throttleRatio = 0) => {
         if (muted || !active) {
           if (engine) {
             engine.gain.gain.setTargetAtTime(0.0001, engine.ac.currentTime, 0.08);
           }
+          if (engineSample) {
+            engineSample.gain.gain.setTargetAtTime(0.0001, engineSample.ac.currentTime, 0.08);
+          }
+          return;
+        }
+        const intensity = clamp(Math.max(speedRatio, turnRatio, throttleRatio * 0.82), 0, 1);
+        const sampleNodes = ensureEngineSample();
+        if (sampleNodes) {
+          const now = sampleNodes.ac.currentTime;
+          sampleNodes.gain.gain.setTargetAtTime(0.014 + intensity * 0.085, now, 0.08);
+          sampleNodes.source.playbackRate.setTargetAtTime(0.82 + intensity * 0.26, now, 0.12);
+          sampleNodes.filter.frequency.setTargetAtTime(620 + intensity * 900, now, 0.12);
+          if (engine) engine.gain.gain.setTargetAtTime(0.0001, engine.ac.currentTime, 0.08);
           return;
         }
         const nodes = ensureEngine();
         if (!nodes) return;
-        const intensity = clamp(Math.max(speedRatio, turnRatio), 0, 1);
         const now = nodes.ac.currentTime;
         nodes.gain.gain.setTargetAtTime(0.012 + intensity * 0.042, now, 0.1);
         nodes.low.frequency.setTargetAtTime(40 + intensity * 26, now, 0.12);
@@ -314,19 +410,40 @@
       info: () => ({
         muted,
         state: audio ? audio.state : "not-created",
-        engineActive: !!(audio && engine && audio.state === "running" && engine.gain.gain.value > 0),
+        engineActive: !!(
+          audio &&
+          audio.state === "running" &&
+          ((engine && engine.gain.gain.value > 0) || (engineSample && engineSample.gain.gain.value > 0))
+        ),
+        engineMode: engineSample ? "sample" : (engine ? "synth" : "none"),
+        engineGain: engineSample ? engineSample.gain.gain.value : (engine ? engine.gain.gain.value : 0),
+        cannonSampleLoaded: sampleBuffers.has("cannon"),
+        engineSampleLoaded: sampleBuffers.has("engine"),
+        sampleErrors,
         events: { ...events }
       }),
       click: () => tone(520, 760, 0.07, "triangle", 0.08),
-      shoot: (isPlayer, distance = 0) => {
+      shoot: (isPlayer, distance = 0, pan = 0) => {
         const ac = get();
         if (!ac || muted) return;
         if (isPlayer) events.playerShots += 1;
         else events.enemyShots += 1;
         const attenuation = isPlayer ? 1 : clamp(1 - distance / 2200, 0.42, 1);
-        noise(isPlayer ? 0.4 : 0.34, (isPlayer ? 0.54 : 0.32) * attenuation, isPlayer ? 920 : 640);
-        tone(isPlayer ? 145 : 118, 31, 0.44, "sawtooth", (isPlayer ? 0.24 : 0.17) * attenuation);
-        tone(82, 27, 0.52, "triangle", (isPlayer ? 0.16 : 0.12) * attenuation);
+        const played = playSample(
+          "cannon",
+          (isPlayer ? 0.92 : 0.54) * attenuation,
+          isPlayer ? 0.78 : 0.72 + attenuation * 0.1,
+          pan,
+          isPlayer ? 6200 : 1500 + attenuation * 1600
+        );
+        if (played) {
+          events.sampleShots += 1;
+        } else {
+          events.fallbackShots += 1;
+          loadSample("cannon");
+          noise(isPlayer ? 0.42 : 0.3, (isPlayer ? 0.42 : 0.24) * attenuation, isPlayer ? 520 : 420, pan);
+          tone(isPlayer ? 72 : 64, 28, 0.42, "triangle", (isPlayer ? 0.12 : 0.08) * attenuation);
+        }
       },
       whoosh: () => {
         const ac = get();
@@ -467,6 +584,8 @@
     aiming: false,
     speed: 0,
     strafeSpeed: 0,
+    throttleInput: 0,
+    steerInput: 0,
     fireCooldown: 0,
     reload: 0,
     reloadDuration: B.playerReload,
@@ -478,7 +597,9 @@
     alive: true,
     recoil: 0,
     hitFlash: 0,
-    muzzleFlash: 0
+    muzzleFlash: 0,
+    burning: false,
+    burnStartedAt: 0
   });
 
   const makeEnemy = (spawn, slot) => ({
@@ -508,11 +629,13 @@
   });
 
   const resetBattle = () => {
-    obstacles = D.cloneObstacles().map((obstacle, index) => {
+    const level = currentLevel();
+    obstacles = D.cloneObstacles(levelIndex).map((obstacle, index) => {
       const meta = D.OBSTACLE_TYPES[obstacle.type];
       return {
         ...obstacle,
         id: index,
+        meta,
         hp: meta.hp,
         maxHp: meta.hp,
         destroyed: false,
@@ -536,6 +659,7 @@
     damageFlash = 0;
     hitMarker = 0;
     cockpitMuzzleFlash = 0;
+    shotFeedback = null;
     hullBobPhase = 0;
     hullBobX = 0;
     hullBobY = 0;
@@ -543,18 +667,23 @@
     battleEndedAt = 0;
     battleStartedAt = performance.now();
     player = makePlayer(WORLD.playerSpawn);
-    const spawns = D.cloneSpawns();
-    for (let i = 0; i < B.enemyTotal; i += 1) {
+    const spawns = D.cloneSpawns(levelIndex);
+    for (let i = 0; i < level.enemyTotal; i += 1) {
       const enemy = makeEnemy(spawns[i], i);
       enemy.turretAngle = enemy.angle;
       enemy.targetAim = enemy.angle;
       enemies.push(enemy);
     }
     updateMenuStats();
+    updateLevelUi();
     updateHud();
   };
 
   // ---------- 特效 ----------
+  const showShotFeedback = (text, color = "#e8efc5", duration = 1.2) => {
+    shotFeedback = { text, color, life: duration, maxLife: duration };
+  };
+
   const addFloat = (x, y, text, color, size = 18) => {
     floats.push({ x, y, z: 46, text, color, size, life: 1.15, maxLife: 1.15 });
   };
@@ -662,7 +791,11 @@
       screenShake = Math.max(screenShake, 6);
       cockpitMuzzleFlash = 1;
     }
-    AudioFx.shoot(tank.isPlayer, tank.isPlayer ? 0 : distanceBetween(tank, player));
+    const enemyBearing = player ? Math.atan2(player.y - tank.y, player.x - tank.x) : 0;
+    const shotPan = tank.isPlayer
+      ? 0
+      : clamp(Math.sin(angleDelta(player ? player.turretAngle : 0, enemyBearing)), -1, 1);
+    AudioFx.shoot(tank.isPlayer, tank.isPlayer ? 0 : distanceBetween(tank, player), shotPan);
     addBurst(x, y, tank.isPlayer ? "#ffe08a" : "#ffb15d", 12, 145);
     addBurst(x, y, "rgba(73,70,62,.72)", 9, 90);
     return true;
@@ -670,9 +803,11 @@
 
   const damageObstacle = (obstacle, bullet) => {
     if (!obstacle || obstacle.destroyed) return;
+    const meta = obstacle.meta || D.OBSTACLE_TYPES[obstacle.type];
     if (obstacle.hp === null) {
       addImpactExplosion(bullet.x, bullet.y);
       AudioFx.hit("front");
+      if (bullet.isPlayer) showShotFeedback((meta ? meta.label : "硬掩体") + "挡住炮弹", "#ffd178");
       return;
     }
     obstacle.hp -= bullet.damage;
@@ -685,27 +820,37 @@
       addFloat(obstacle.x + obstacle.w / 2, obstacle.y, "掩体摧毁", "#ffd178", 17);
       screenShake = Math.max(screenShake, 5);
       AudioFx.breakCover();
+      if (bullet.isPlayer) showShotFeedback((meta ? meta.label : "掩体") + "已摧毁", "#f2d283");
     } else {
       AudioFx.hit("side");
+      if (bullet.isPlayer) {
+        const remaining = Math.max(1, Math.ceil(obstacle.hp / Math.max(1, bullet.damage)));
+        showShotFeedback(
+          (meta ? meta.label : "掩体") + "挡住炮弹 · 约再 " + remaining + " 炮",
+          "#ffd178"
+        );
+      }
     }
   };
 
   const addWreck = (tank) => {
     const meta = D.OBSTACLE_TYPES.wreck;
     obstacles.push({
-      x: tank.x - 32,
-      y: tank.y - 38,
-      w: 64,
-      h: 76,
+      x: tank.x - 36,
+      y: tank.y - 42,
+      w: 72,
+      h: 84,
       type: "wreck",
       artVariant: ["front", "side", "rear", "alt"][kills % 4],
       id: "wreck-" + Math.random().toString(36).slice(2),
+      sourceId: tank.id || "player",
       hp: null,
       maxHp: null,
       destroyed: false,
       blocks: true,
       hitFlash: 0,
-      meta
+      meta,
+      burningUntil: performance.now() + (tank.isPlayer ? 0 : 9000)
     });
   };
 
@@ -725,13 +870,14 @@
       return;
     }
     enemies = enemies.filter((enemy) => enemy !== tank);
+    addFloat(tank.x, tank.y, "残骸留场", "#ffd08a", 19);
     kills += 1;
     combo = comboTime > 0 ? combo + 1 : 1;
     comboTime = B.comboWindow;
     const points = (110 + (combo - 1) * 28) * Math.min(combo, 8);
     score += points;
     addFloat(tank.x, tank.y, "+" + points + (combo > 1 ? "  ×" + combo : ""), "#f7e59a", 22);
-    if (kills >= B.enemyTotal && enemies.length === 0) {
+    if (kills >= currentLevel().enemyTotal && enemies.length === 0) {
       bullets = bullets.filter((bullet) => bullet.isPlayer);
       setTimeout(() => {
         if (state === "playing") finishBattle(true);
@@ -749,15 +895,30 @@
       addFloat(target.x, target.y, "跳弹", "#fff0a6", 20);
       AudioFx.ricochet();
       target.hitFlash = 0.8;
-      if (bullet.isPlayer) hitMarker = 0.22;
+      if (bullet.isPlayer) {
+        hitMarker = 0.22;
+        showShotFeedback("跳弹 · " + armor.label, "#fff0a6");
+      }
       return;
     }
     const damage = Math.round(bullet.damage * armor.multiplier);
     target.hp = Math.max(0, target.hp - damage);
     target.hitFlash = 1;
+    const ignited = !target.isPlayer && target.hp > 0 && !target.burning;
+    if (ignited) {
+      target.burning = true;
+      target.burnStartedAt = performance.now();
+      addFloat(target.x, target.y, "目标起火", "#ff9a53", 20);
+    }
     if (bullet.isPlayer) {
       shotsHit += 1;
       hitMarker = 0.3;
+      showShotFeedback(
+        target.hp <= 0
+          ? "摧毁 · " + armor.label + " -" + damage
+          : "命中 · " + armor.label + " -" + damage + (ignited ? " · 目标起火" : ""),
+        armor.color
+      );
     }
     if (target.isPlayer) damageFlash = Math.max(damageFlash, 0.7);
     addImpactExplosion(bullet.x, bullet.y);
@@ -789,6 +950,8 @@
       player.turretAngle = normalizeAngle(player.turretAngle + touches.right.dx * STICK_LOOK_SPEED * lookScale * dt);
       player.pitch = clamp(player.pitch - touches.right.dy * 0.72 * dt, -PITCH_LIMIT, PITCH_LIMIT);
     }
+    player.throttleInput = throttle;
+    player.steerInput = steer;
 
     const targetSpeed = throttle * (throttle >= 0 ? player.type.maxForward : player.type.maxReverse);
     player.speed = approach(
@@ -842,6 +1005,7 @@
       bullet.rangeLeft -= Math.hypot(bullet.vx, bullet.vy) * dt;
       if (bullet.life <= 0 || bullet.rangeLeft <= 0) {
         bullet.alive = false;
+        if (bullet.isPlayer) showShotFeedback("炮弹飞过 · 未命中", "#eadba7");
         continue;
       }
       bullet.px = bullet.x;
@@ -850,6 +1014,7 @@
       bullet.y += bullet.vy * dt;
       if (bullet.x < -20 || bullet.y < -20 || bullet.x > WORLD.width + 20 || bullet.y > WORLD.height + 20) {
         bullet.alive = false;
+        if (bullet.isPlayer) showShotFeedback("炮弹飞出战场 · 未命中", "#eadba7");
         continue;
       }
       let nearestT = 1;
@@ -885,6 +1050,7 @@
         else {
           addBurst(bullet.x, bullet.y, "#d9d0ad", 8, 90);
           AudioFx.hit("front");
+          if (bullet.isPlayer) showShotFeedback("友军车体挡住炮弹", "#ffd178");
         }
       } else if (
         !bullet.isPlayer &&
@@ -926,6 +1092,10 @@
     damageFlash = Math.max(0, damageFlash - dt * 2);
     hitMarker = Math.max(0, hitMarker - dt * 3);
     cockpitMuzzleFlash = Math.max(0, cockpitMuzzleFlash - dt * 6);
+    if (shotFeedback) {
+      shotFeedback.life = Math.max(0, shotFeedback.life - dt);
+      if (shotFeedback.life === 0) shotFeedback = null;
+    }
     if (comboTime > 0) {
       comboTime = Math.max(0, comboTime - dt);
       if (comboTime === 0) combo = 0;
@@ -1562,6 +1732,48 @@
     return image.complete && image.naturalWidth ? image : null;
   };
 
+  const drawBurningFx = (cx, top, width, height, seed = 0, intensity = 1) => {
+    const time = performance.now() / 1000 + seed;
+    const flameX = cx + Math.sin(time * 6.3) * width * 0.06;
+    const flameY = top + height * 0.42;
+    const radius = Math.max(7, width * 0.13);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 3; i += 1) {
+      const sway = Math.sin(time * (7.4 + i) + i * 1.9) * radius * 0.32;
+      const flicker = 0.72 + Math.sin(time * (9 + i * 1.3)) * 0.2;
+      const glow = ctx.createRadialGradient(
+        flameX + sway,
+        flameY - i * radius * 0.25,
+        1,
+        flameX + sway,
+        flameY - i * radius * 0.25,
+        radius * flicker
+      );
+      glow.addColorStop(0, "rgba(255,246,176," + (0.86 * intensity) + ")");
+      glow.addColorStop(0.32, "rgba(255,145,42," + (0.7 * intensity) + ")");
+      glow.addColorStop(1, "rgba(182,45,17,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(flameX + sway, flameY - i * radius * 0.25, radius * flicker, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    for (let i = 0; i < 4; i += 1) {
+      const rise = radius * (1.4 + i * 0.75);
+      const drift = Math.sin(time * 1.8 + i * 1.4 + seed) * radius * 0.32;
+      const smokeRadius = radius * (0.32 + i * 0.16);
+      ctx.globalAlpha = (0.3 - i * 0.045) * intensity;
+      ctx.fillStyle = i < 2 ? "#3c3328" : "#696356";
+      ctx.beginPath();
+      ctx.arc(flameX + drift, flameY - rise, smokeRadius, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
   const drawObstacle = (obstacle, projection) => {
     const meta = D.OBSTACLE_TYPES[obstacle.type];
     const widthFactor = OBSTACLE_WIDTH_FACTOR[obstacle.type] || 0.78;
@@ -1590,6 +1802,11 @@
     else if (obstacle.type === "wood") drawWoodBarricade(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "earth") drawEarthMound(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wreck") drawWreck(obstacle, x, y, width, height, projection.scale);
+    if (obstacle.type === "wreck" && obstacle.burningUntil > performance.now()) {
+      const remaining = clamp((obstacle.burningUntil - performance.now()) / 9000, 0, 1);
+      const burnWidth = sprite ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420) : width;
+      drawBurningFx(projection.x, y + height * 0.1, burnWidth, height, obstacle.id.length, remaining);
+    }
     if (obstacle.hitFlash > 0) {
       ctx.globalAlpha = obstacle.hitFlash * 0.34;
       ctx.fillStyle = "#fff0b0";
@@ -1701,6 +1918,10 @@
       ctx.fillStyle = p > 0.5 ? "#d9c66b" : "#e07354";
       ctx.fillRect(cx - width * 0.42, top - 25, width * 0.84 * p, 6);
     }
+    if (enemy.burning) {
+      const age = clamp((performance.now() - enemy.burnStartedAt) / 600, 0, 1);
+      drawBurningFx(cx, top, width, height, enemy.id.length, age);
+    }
     ctx.restore();
   };
 
@@ -1802,6 +2023,10 @@
     if (enemy.hitFlash > 0) {
       ctx.fillStyle = "rgba(255,239,174," + clamp(enemy.hitFlash * 0.35, 0, 0.35) + ")";
       ctx.fillRect(cx - width / 2, baseY - height, width, height);
+    }
+    if (enemy.burning) {
+      const age = clamp((performance.now() - enemy.burnStartedAt) / 600, 0, 1);
+      drawBurningFx(cx, baseY - height, width, height, enemy.id.length, age);
     }
     ctx.fillStyle = "rgba(231,185,96,.9)";
     ctx.beginPath();
@@ -2093,6 +2318,13 @@
       ctx.closePath();
       ctx.fill();
       ctx.restore();
+      if (enemy.burning) {
+        ctx.strokeStyle = "rgba(255,151,66,.92)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 6.5 + Math.sin(performance.now() / 140) * 1.2, 0, TAU);
+        ctx.stroke();
+      }
       if (enemy.muzzleFlash > 0) {
         ctx.strokeStyle = "rgba(255,190,85," + clamp(enemy.muzzleFlash, 0, 1) + ")";
         ctx.lineWidth = 1.5;
@@ -2215,8 +2447,26 @@
       ctx.fillStyle = "#e8f0bd";
       ctx.font = "700 12px -apple-system,'PingFang SC',sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("虎式固定炮台 · " + Math.round(p.distance) + " m", cx, cy + 51);
+      ctx.fillText(
+        "虎式固定炮台" + (target.enemy.burning ? " · 起火" : "") + " · " + Math.round(p.distance) + " m",
+        cx,
+        cy + 51
+      );
       ctx.textAlign = "left";
+    }
+    if (shotFeedback) {
+      const alpha = clamp(shotFeedback.life / Math.min(0.32, shotFeedback.maxLife), 0, 1);
+      ctx.globalAlpha = alpha;
+      ctx.font = "700 12px -apple-system,'PingFang SC',sans-serif";
+      const width = Math.max(150, ctx.measureText(shotFeedback.text).width + 28);
+      ctx.fillStyle = "rgba(10,16,9,.78)";
+      roundedRect(cx - width / 2, cy + 70, width, 28, 7);
+      ctx.fill();
+      ctx.fillStyle = shotFeedback.color;
+      ctx.textAlign = "center";
+      ctx.fillText(shotFeedback.text, cx, cy + 88);
+      ctx.textAlign = "left";
+      ctx.globalAlpha = 1;
     }
     if (hitMarker > 0) {
       ctx.globalAlpha = clamp(hitMarker * 4, 0, 1);
@@ -2330,6 +2580,7 @@
     if (hpBar) hpBar.style.width = (hpPercent * 100).toFixed(1) + "%";
     setText("hud-hp-text", Math.max(0, Math.ceil(player.hp)) + " / " + player.maxHp);
     setText("hud-enemies", String(enemies.length));
+    setText("hud-stage", currentLevel().label);
     setText("hud-score", String(score));
     setText("hud-combo", combo > 1 ? "×" + combo : "—");
     setText("hud-ammo", player.reload > 0 ? "装填 " + player.reload.toFixed(1) + "s" : "待发");
@@ -2363,7 +2614,8 @@
     AudioFx.setEngine(
       state === "playing" && !locked,
       Math.abs(player.speed) / player.type.maxForward,
-      Math.max(Math.abs(player.strafeSpeed) / player.type.maxStrafe, hullTurnSignal * 0.55)
+      Math.max(Math.abs(player.strafeSpeed) / player.type.maxStrafe, hullTurnSignal * 0.55),
+      Math.abs(player.throttleInput || 0)
     );
     setText("hud-zoom", player.aiming ? AIM_ZOOM.toFixed(1) + "×" : "1×");
     const syncLabel = $("sync-status");
@@ -2372,6 +2624,40 @@
       else if (Sync && Sync.loggedIn) syncLabel.textContent = "云同步已开启";
       else syncLabel.textContent = "本机存档 · 登录后云同步";
     }
+  };
+
+  const renderLevelSelect = () => {
+    const host = $("level-select");
+    if (!host) return;
+    host.innerHTML = LEVELS.map((level, index) =>
+      '<button class="level-chip' + (index === levelIndex ? " active" : "") +
+      '" type="button" data-level="' + index + '">' +
+        "<strong>" + level.label + " · " + level.title + "</strong>" +
+        "<span>" + level.hint + "</span>" +
+      "</button>"
+    ).join("");
+    host.querySelectorAll("[data-level]").forEach((button) => {
+      button.addEventListener("click", () => selectLevel(Number(button.dataset.level)));
+    });
+  };
+
+  const updateLevelUi = () => {
+    const level = currentLevel();
+    renderLevelSelect();
+    setText("menu-level-title", level.title);
+    setText("menu-level-intro", level.intro);
+    setText("menu-enemy-count", String(level.enemyTotal));
+    setText("btn-start-label", "开始" + level.label);
+    setText("btn-start-note", level.title + " · " + level.enemyTotal + " 辆");
+    setText("hud-stage", level.label);
+  };
+
+  const selectLevel = (index) => {
+    if (!Number.isInteger(index) || !LEVELS[index]) return;
+    levelIndex = index;
+    if (state === "menu") resetBattle();
+    else updateLevelUi();
+    updateHud();
   };
 
   const updateMenuStats = () => {
@@ -2468,6 +2754,7 @@
 
   const showMenu = () => {
     state = "menu";
+    lastBattleWon = false;
     keys.clear();
     AudioFx.setEngine(false);
     if (player) player.aiming = false;
@@ -2478,9 +2765,10 @@
     updateMobileControls();
     updateMenuStats();
     updateHud();
+    updateLevelUi();
   };
 
-  const startBattle = () => {
+  const startBattle = (targetLevel = levelIndex) => {
     if (locked) {
       setOverlay("time-lock", true);
       return;
@@ -2490,9 +2778,11 @@
       setOverlay("time-lock", true);
       return;
     }
+    if (Number.isInteger(targetLevel) && LEVELS[targetLevel]) levelIndex = targetLevel;
     AudioFx.unlock();
     AudioFx.click();
     resetBattle();
+    lastBattleWon = false;
     state = "playing";
     setOverlay("menu", false);
     setOverlay("pause-modal", false);
@@ -2516,7 +2806,12 @@
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
     setOverlay("pause-modal", true);
     const info = $("pause-info");
-    if (info) info.textContent = automatic ? "页面切到后台，第一人称炮塔视角已冻结。" : "战场已冻结，敌军装填和弹道都会暂停。";
+    const level = currentLevel();
+    if (info) {
+      info.textContent = automatic
+        ? "页面切到后台，第一人称炮塔视角已冻结。"
+        : level.label + " · " + level.title + "。战场已冻结，随时可以重新开始本关。";
+    }
     updateMobileControls();
   };
 
@@ -2539,6 +2834,7 @@
 
   const finishBattle = (won) => {
     if (state !== "playing") return;
+    lastBattleWon = won;
     state = "result";
     AudioFx.setEngine(false);
     battleEndedAt = performance.now();
@@ -2549,6 +2845,7 @@
     const accuracy = shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0;
     const result = {
       won,
+      level: levelIndex + 1,
       score,
       kills,
       bestCombo: Math.max(combo, 1),
@@ -2556,7 +2853,9 @@
       accuracy
     };
     saveData = Sync ? Sync.recordBattle(result) : saveData;
-    setText("result-title", won ? "合围突破" : "炮塔陷落");
+    const level = currentLevel();
+    const hasNext = won && levelIndex < LEVELS.length - 1;
+    setText("result-title", won ? (hasNext ? level.title + " 突破" : "战役完成") : "炮塔陷落");
     const badge = $("result-badge");
     if (badge) {
       badge.textContent = won ? "胜利" : "失败";
@@ -2564,15 +2863,22 @@
     }
     const html =
       '<div class="result-stats">' +
-        '<div><span>击毁</span><strong>' + kills + " / " + B.enemyTotal + "</strong></div>" +
+        '<div><span>击毁</span><strong>' + kills + " / " + level.enemyTotal + "</strong></div>" +
         '<div><span>战绩</span><strong>' + score + "</strong></div>" +
         '<div><span>最高连击</span><strong>×' + Math.max(combo, 1) + "</strong></div>" +
         '<div><span>命中率</span><strong>' + accuracy + "%</strong></div>" +
         '<div><span>用时</span><strong>' + duration + " 秒</strong></div>" +
       "</div>" +
-      '<p class="result-note">' + (won ? "十座固定炮台全部清除，你在合围中找到了最后一条机动路线。" : "固定炮台不会追击。用履带换位、用掩体挡炮，再寻找侧后装甲窗口。") + "</p>";
+      '<p class="result-note">' + (
+        won
+          ? (hasNext ? "本关敌军已清除。进入下一关后敌军和工事都会增加。" : "三关敌军全部清除，钢铁代差战役已完成。")
+          : "固定炮台不会追击。可以重新开始本关，或用履带换位、掩体挡炮再寻找侧后装甲窗口。"
+      ) + "</p>";
     const body = $("result-body");
     if (body) body.innerHTML = html;
+    const nextButton = $("btn-next-level");
+    if (nextButton) nextButton.classList.toggle("hidden", !hasNext);
+    setText("btn-retry", won ? "再打本关" : "重新开始本关");
     setOverlay("result-modal", true);
     updateMobileControls();
     updateMenuStats();
@@ -2637,7 +2943,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=11").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=12").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2686,11 +2992,13 @@
   };
 
   const bindUi = () => {
-    $("btn-start")?.addEventListener("click", startBattle);
+    $("btn-start")?.addEventListener("click", () => startBattle());
     $("btn-pause")?.addEventListener("click", () => pauseGame(false));
     $("btn-resume")?.addEventListener("click", resumeGame);
+    $("btn-restart-level")?.addEventListener("click", () => startBattle(levelIndex));
     $("btn-pause-menu")?.addEventListener("click", showMenu);
-    $("btn-retry")?.addEventListener("click", startBattle);
+    $("btn-retry")?.addEventListener("click", () => startBattle(levelIndex));
+    $("btn-next-level")?.addEventListener("click", () => startBattle(levelIndex + 1));
     $("btn-result-menu")?.addEventListener("click", showMenu);
     $("btn-gallery")?.addEventListener("click", () => {
       renderGallery();
@@ -2779,7 +3087,7 @@
     }
     setText("bearing-help", COARSE_POINTER
       ? "左摇杆驾驶 · 右摇杆环视 · 左上战术雷达"
-      : "W/S 前后 · A/D 车体转向 · Q/E 横移 · 鼠标环视");
+      : "W 前进 · S 倒车 · A/D 左右转 · Q/E 横移 · 鼠标环视");
     resetBattle();
     state = "menu";
     updateCanvasFrame();
@@ -2813,6 +3121,13 @@
     getSnapshot: () => ({
       state,
       locked,
+      level: {
+        index: levelIndex,
+        label: currentLevel().label,
+        title: currentLevel().title,
+        enemyTotal: currentLevel().enemyTotal,
+        obstacleTotal: obstacles.length
+      },
       player: player ? {
         x: player.x,
         y: player.y,
@@ -2841,7 +3156,8 @@
         reload: enemy.reload,
         shotsFired: enemy.shotsFired,
         muzzleFlash: enemy.muzzleFlash,
-        fixed: enemy.fixed
+        fixed: enemy.fixed,
+        burning: enemy.burning
       })),
       visibleEnemyIds: visibleEnemies().map((enemy) => enemy.id),
       threatCompassCount: enemies.length,
@@ -2859,6 +3175,7 @@
       enemyCount: enemies.length,
       bullets: bullets.length,
       cockpitMuzzleFlash,
+      shotFeedback: shotFeedback ? { ...shotFeedback } : null,
       audio: AudioFx.info(),
       backdrop: selectedBackdrop,
       backdropReady: !!backdropImage(selectedBackdrop),
@@ -2867,9 +3184,17 @@
       enemyDistanceMax: enemies.length ? Math.max(...enemies.map((enemy) => distanceBetween(enemy, player))) : 0,
       kills,
       score,
-      obstacles: obstacles.map((obstacle) => ({ type: obstacle.type, hp: obstacle.hp, destroyed: obstacle.destroyed }))
+      obstacles: obstacles.map((obstacle) => ({
+        type: obstacle.type,
+        hp: obstacle.hp,
+        destroyed: obstacle.destroyed,
+        sourceId: obstacle.sourceId || null,
+        burning: obstacle.burningUntil > performance.now()
+      }))
     }),
     startBattle,
+    selectLevel,
+    restartLevel: () => startBattle(levelIndex),
     pauseGame,
     resumeGame,
     finishBattle,
@@ -3014,6 +3339,45 @@
         y: target.y + target.h / 2,
         damage: 999
       });
+    },
+    damageObstacleOfType: (type, damage = B.playerDamage) => {
+      const target = obstacles.find((obstacle) => obstacle.type === type && obstacle.hp !== null);
+      if (!target) return null;
+      const before = target.hp;
+      damageObstacle(target, {
+        x: target.x + target.w / 2,
+        y: target.y + target.h / 2,
+        damage,
+        isPlayer: true
+      });
+      return {
+        type,
+        before,
+        after: target.hp,
+        destroyed: target.destroyed,
+        feedback: shotFeedback ? shotFeedback.text : ""
+      };
+    },
+    damageEnemyForTest: (id, damage = 45) => {
+      const target = enemies.find((enemy) => enemy.id === id);
+      if (!target) return null;
+      damageTank(target, {
+        x: target.x,
+        y: target.y,
+        vx: Math.cos(target.angle) * B.bulletSpeed,
+        vy: Math.sin(target.angle) * B.bulletSpeed,
+        owner: player,
+        isPlayer: true,
+        damage
+      });
+      const remaining = enemies.find((enemy) => enemy.id === id);
+      return {
+        alive: !!remaining,
+        burning: !!(remaining && remaining.burning),
+        hp: remaining ? remaining.hp : 0,
+        feedback: shotFeedback ? shotFeedback.text : "",
+        wrecks: obstacles.filter((obstacle) => obstacle.type === "wreck" && obstacle.sourceId === id).length
+      };
     },
     eliminateAllEnemies: () => {
       if (player) {
