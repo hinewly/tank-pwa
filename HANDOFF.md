@@ -1,6 +1,6 @@
 # 坦克对战：钢铁代差 交接
 
-- last_updated: 2026-11-27 15:05
+- last_updated: 2026-11-27 14:55
 - status: active（首版代码完成，正式部署待用户确认）
 - version: v0.1.1
 
@@ -39,7 +39,7 @@
 - 平台：顶栏账号胶囊、打卡 chip、共享时长锁定、儿童游戏池归类、反馈入口、异步 portal 容错。
 - 云同步：`app=tank`、本机写入、登录后合并、新设备恢复、空档防覆盖、离线待同步标记与联网补传。
 - PWA：`/tank/` scope、`dbtank-*` 独立缓存、离线首屏、安装入口、版本刷新。
-- 跨项目登记：`daobox-home/public/portal.js` 仅增加 `PILL_ANCHORS.tank` 与 `CHECKIN_APPS.tank`。
+- 跨项目登记：`daobox-home` 已合入共享层并提交 `29da5b8`，增加 `PILL_ANCHORS.tank` 与 `CHECKIN_APPS.tank`；国内公网 portal.js 已确认生效。
 
 ## 验证结果
 
@@ -51,6 +51,8 @@
 - 云同步：设备 A 写云 1 次；设备 B 空本地恢复同一云档且不产生覆盖写；模拟上传失败后 pending=true，恢复网络补传并清除 pending。
 - PWA：SW scope 为 `/tank/`；旧 `dbtank-old` 被清理、同域 `otherapp-cache` 保留；断网 reload 仍进入菜单。
 - 容错：portal.js 与账号 API 全部中断时，游戏仍在约 1.3 秒内进入菜单。
+- 共享层兼容：最新 `daobox-home` main（含 `DaoBox.ready()`、`daobox:authready`、`cloud-sync v1.0.0`）下，ready 单例、authready 仅触发一次、账号胶囊、打卡与坦克自有同步共存通过。
+- 线上登记：`https://daobox.net.cn/portal.js` 返回 200，公网内容包含 `tank` 顶栏锚点与打卡白名单。
 - 域名自检：工作区脚本通过，并已把 `tank-pwa` 纳入 DB_HOME 检查列表。
 
 ## 待办
@@ -63,8 +65,7 @@
 
 ## 注意事项
 
-- 首次跨项目改动仅为 daobox-home 中 `tank` 的锚点与打卡白名单，属于新 App 增量接入，不改其他应用行为。
-- daobox-home 另有 `entertainment-cloud-sync-20261127` 并行工位也修改 `portal.js`，但改的是认证 Promise，与本任务两行登记不重叠；本任务未部署，合并时按现行串行规则处理。
+- daobox-home 的 `tank` 锚点与打卡白名单已随共享层同步完成：daobox-home commit `29da5b8`，国内公网已验证；未部署 tank 站点本身。
 - `portal.js` 目前不自动上传云备份，坦克项目需自行实现登录态识别与同步节流。
 - API 统一使用 `credentials: "include"`，依赖 `.daobox.net.cn` / `.daobox.app` 全域 Cookie。
 - 普通 SW activate 写法常误删同域全部缓存，本项目必须按 `dbtank-` 前缀过滤。
@@ -72,6 +73,7 @@
 ## 相关文件
 
 - `docs/立项与实现方案.md`
+- `docs/daobox-home-tank接入-已完成.md`
 - `public/index.html`
 - `public/game.js`
 - `public/sync.js`
