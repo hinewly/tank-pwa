@@ -8,10 +8,12 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.2.1";
+  const APP_VERSION = "v0.2.2";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
-  const FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
+  const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
+  const AIM_ZOOM = 1.7;
+  const AIM_MOUSE_SCALE = 0.56;
   const EYE_HEIGHT = 44;
   const PITCH_LIMIT = 0.2;
   const $ = (id) => document.getElementById(id);
@@ -117,7 +119,9 @@
   };
 
   // ---------- 2.5D 投影 ----------
-  const horizonY = () => VIEW_H * 0.5 + Math.tan(player ? player.pitch : 0) * FOCAL;
+  const currentFocal = () => BASE_FOCAL * (player && player.aiming ? AIM_ZOOM : 1);
+  const currentHalfFov = () => HALF_FOV / (player && player.aiming ? AIM_ZOOM : 1);
+  const horizonY = () => VIEW_H * 0.5 + Math.tan(player ? player.pitch : 0) * currentFocal();
 
   const projectWorld = (x, y, z = 0) => {
     if (!player) return null;
@@ -128,9 +132,10 @@
     const bearing = Math.atan2(dy, dx);
     const relative = angleDelta(player.turretAngle, bearing);
     const forward = dist * Math.cos(relative);
-    if (forward <= 4 || Math.abs(relative) > HALF_FOV + 0.035) return null;
-    const scale = FOCAL / forward;
-    const screenX = VIEW_W / 2 + Math.tan(relative) * FOCAL;
+    if (forward <= 4 || Math.abs(relative) > currentHalfFov() + 0.035) return null;
+    const focal = currentFocal();
+    const scale = focal / forward;
+    const screenX = VIEW_W / 2 + Math.tan(relative) * focal;
     const groundY = horizonY() + EYE_HEIGHT * scale;
     const screenY = groundY - z * scale;
     return {
@@ -342,6 +347,7 @@
     angle: spawn.angle,
     turretAngle: spawn.angle,
     pitch: 0,
+    aiming: false,
     speed: 0,
     fireCooldown: 0,
     reload: 0,
@@ -369,7 +375,7 @@
     targetAim: 0,
     aimBias: (Math.random() - 0.5) * B.enemyAimBias,
     fireCooldown: 0,
-    reload: 0.75 + slot * 0.16 + Math.random() * 0.28,
+    reload: 1 + slot * 0.13 + Math.random() * 0.22,
     reloadDuration: B.enemyReload,
     ammo: B.magazineSize,
     shotsFired: 0,
@@ -635,7 +641,8 @@
       if (keys.has("a") || keys.has("arrowleft")) steer -= 1;
     }
     if (touches.right.id !== null) {
-      player.turretAngle = normalizeAngle(player.turretAngle + touches.right.dx * STICK_LOOK_SPEED * dt);
+      const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
+      player.turretAngle = normalizeAngle(player.turretAngle + touches.right.dx * STICK_LOOK_SPEED * lookScale * dt);
       player.pitch = clamp(player.pitch - touches.right.dy * 0.72 * dt, -PITCH_LIMIT, PITCH_LIMIT);
     }
 
@@ -778,11 +785,7 @@
 
   const firePlayer = () => {
     if (!player || state !== "playing" || locked) return false;
-    const target = aimedEnemy();
-    const angle = target
-      ? Math.atan2(target.enemy.y - player.y, target.enemy.x - player.x)
-      : player.turretAngle;
-    return tryFire(player, angle);
+    return tryFire(player);
   };
 
   // ---------- 输入 ----------
@@ -834,6 +837,9 @@
         if (event.button === 0) {
           fireHeld = true;
           firePlayer();
+        } else if (event.button === 2) {
+          player.aiming = true;
+          updateHud();
         }
         if (event.pointerType === "mouse" && document.pointerLockElement !== canvas) {
           const pending = canvas.requestPointerLock && canvas.requestPointerLock();
@@ -855,14 +861,15 @@
         return;
       }
       if (state !== "playing") return;
+      const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
       if (document.pointerLockElement === canvas) {
-        player.turretAngle = normalizeAngle(player.turretAngle + event.movementX * MOUSE_SENSITIVITY);
-        player.pitch = clamp(player.pitch - event.movementY * MOUSE_SENSITIVITY * 0.72, -PITCH_LIMIT, PITCH_LIMIT);
+        player.turretAngle = normalizeAngle(player.turretAngle + event.movementX * MOUSE_SENSITIVITY * lookScale);
+        player.pitch = clamp(player.pitch - event.movementY * MOUSE_SENSITIVITY * 0.72 * lookScale, -PITCH_LIMIT, PITCH_LIMIT);
       } else if (mouseDragging) {
         const dx = event.clientX - lastPointerX;
         const dy = event.clientY - lastPointerY;
-        player.turretAngle = normalizeAngle(player.turretAngle + dx * MOUSE_SENSITIVITY);
-        player.pitch = clamp(player.pitch - dy * MOUSE_SENSITIVITY * 0.72, -PITCH_LIMIT, PITCH_LIMIT);
+        player.turretAngle = normalizeAngle(player.turretAngle + dx * MOUSE_SENSITIVITY * lookScale);
+        player.pitch = clamp(player.pitch - dy * MOUSE_SENSITIVITY * 0.72 * lookScale, -PITCH_LIMIT, PITCH_LIMIT);
         lastPointerX = event.clientX;
         lastPointerY = event.clientY;
       }
@@ -872,6 +879,7 @@
       if (event.pointerType === "mouse" || event.pointerType === "pen") {
         mouseDragging = false;
         if (event.type === "pointerup" || event.type === "pointercancel") fireHeld = false;
+        if (event.button === 2 && player) player.aiming = false;
       }
       for (const side of ["left", "right"]) {
         const stick = touches[side];
@@ -885,9 +893,10 @@
     };
     canvas.addEventListener("pointerup", endPointer);
     canvas.addEventListener("pointercancel", endPointer);
-    window.addEventListener("pointerup", () => {
+    window.addEventListener("pointerup", (event) => {
       mouseDragging = false;
-      fireHeld = false;
+      if (event.button === 0 || event.pointerType !== "mouse") fireHeld = false;
+      if (event.button === 2 && player) player.aiming = false;
     });
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
@@ -909,6 +918,7 @@
       keys.clear();
       fireHeld = false;
       mouseDragging = false;
+      if (player) player.aiming = false;
       if (state === "playing") pauseGame(true);
     });
     window.addEventListener("resize", updateCanvasFrame);
@@ -934,8 +944,8 @@
     for (let i = 0; i < 24; i += 1) {
       const angle = i / 24 * TAU;
       const relative = angleDelta(player.turretAngle, angle);
-      if (Math.abs(relative) > HALF_FOV + 0.2) continue;
-      const x = VIEW_W / 2 + Math.tan(relative) * FOCAL;
+      if (Math.abs(relative) > currentHalfFov() + 0.2) continue;
+      const x = VIEW_W / 2 + Math.tan(relative) * currentFocal();
       const width = 65 + (i % 5) * 16;
       const height = 25 + (i % 4) * 12;
       ctx.fillStyle = "rgba(47,63,42,.42)";
@@ -1272,6 +1282,25 @@
     return p ? p.groundY : VIEW_H;
   };
 
+  const coverImages = new Map();
+
+  const coverImage = (obstacle) => {
+    const art = D.COVER_ART && D.COVER_ART[obstacle.type];
+    if (!art) return null;
+    const damaged = obstacle.hp !== null && obstacle.maxHp && obstacle.hp <= obstacle.maxHp * 0.55;
+    const src = damaged && art.damaged ? art.damaged : art.normal;
+    if (!src) return null;
+    const key = obstacle.type + ":" + src;
+    let image = coverImages.get(key);
+    if (!image) {
+      image = new Image();
+      image.decoding = "async";
+      image.src = src;
+      coverImages.set(key, image);
+    }
+    return image.complete && image.naturalWidth ? image : null;
+  };
+
   const drawObstacle = (obstacle, projection) => {
     const meta = D.OBSTACLE_TYPES[obstacle.type];
     const widthFactor = OBSTACLE_WIDTH_FACTOR[obstacle.type] || 0.78;
@@ -1280,6 +1309,7 @@
     const height = clamp(meta.height * projection.scale * heightFactor, 8, 300);
     const x = projection.x - width / 2;
     const y = projection.groundY - height;
+    const sprite = coverImage(obstacle);
     ctx.save();
     ctx.shadowColor = "rgba(10,15,9,.32)";
     ctx.shadowBlur = Math.min(18, 8 * projection.scale);
@@ -1290,7 +1320,11 @@
     ctx.fill();
     ctx.shadowColor = "transparent";
     ctx.shadowOffsetY = 0;
-    if (obstacle.type === "concrete") drawConcreteBarrier(obstacle, x, y, width, height, projection.scale);
+    if (sprite) {
+      const aspect = sprite.naturalWidth / sprite.naturalHeight;
+      const drawWidth = clamp(height * aspect, 12, 420);
+      ctx.drawImage(sprite, projection.x - drawWidth / 2, y, drawWidth, height);
+    } else if (obstacle.type === "concrete") drawConcreteBarrier(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "sandbag") drawSandbagWall(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wood") drawWoodBarricade(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "earth") drawEarthMound(obstacle, x, y, width, height, projection.scale);
@@ -1298,16 +1332,19 @@
     if (obstacle.hitFlash > 0) {
       ctx.globalAlpha = obstacle.hitFlash * 0.34;
       ctx.fillStyle = "#fff0b0";
-      roundedRect(x, y, width, height, 4);
+      const flashWidth = sprite ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420) : width;
+      roundedRect(projection.x - flashWidth / 2, y, flashWidth, height, 4);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
     if (obstacle.hp !== null && obstacle.maxHp && obstacle.hp < obstacle.maxHp) {
       const p = clamp(obstacle.hp / obstacle.maxHp, 0, 1);
+      const barWidth = sprite ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420) : width;
+      const barX = projection.x - barWidth / 2;
       ctx.fillStyle = "rgba(16,20,13,.72)";
-      ctx.fillRect(x, y - 8, width, 5);
+      ctx.fillRect(barX, y - 8, barWidth, 5);
       ctx.fillStyle = p > 0.45 ? "#d4b66a" : "#d56b4d";
-      ctx.fillRect(x, y - 8, width * p, 5);
+      ctx.fillRect(barX, y - 8, barWidth * p, 5);
     }
     ctx.restore();
   };
@@ -1475,6 +1512,43 @@
     ctx.fillRect(cx - 8, gunTop + 42, 3, 105);
   };
 
+  const drawAimOverlay = () => {
+    if (!player || !player.aiming) return;
+    const left = 176;
+    const right = VIEW_W - 176;
+    const top = 94;
+    const bottom = VIEW_H - 112;
+    ctx.save();
+    const edge = ctx.createLinearGradient(0, 0, VIEW_W, 0);
+    edge.addColorStop(0, "rgba(5,9,5,.22)");
+    edge.addColorStop(0.17, "rgba(5,9,5,0)");
+    edge.addColorStop(0.83, "rgba(5,9,5,0)");
+    edge.addColorStop(1, "rgba(5,9,5,.22)");
+    ctx.fillStyle = edge;
+    ctx.fillRect(0, 62, VIEW_W, VIEW_H - 62);
+    ctx.strokeStyle = "rgba(218,235,158,.66)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(left, top);
+    ctx.lineTo(left, bottom);
+    ctx.moveTo(right, top);
+    ctx.lineTo(right, bottom);
+    ctx.moveTo(left, top);
+    ctx.lineTo(left + 42, top);
+    ctx.moveTo(right, top);
+    ctx.lineTo(right - 42, top);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(9,15,8,.72)";
+    roundedRect(VIEW_W / 2 - 76, 74, 152, 25, 7);
+    ctx.fill();
+    ctx.fillStyle = "#e3edac";
+    ctx.font = "700 11px -apple-system,'PingFang SC',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("炮长镜  " + AIM_ZOOM.toFixed(1) + "×", VIEW_W / 2, 91);
+    ctx.textAlign = "left";
+    ctx.restore();
+  };
+
   const drawCompass = () => {
     const x = 76;
     const y = 16;
@@ -1507,7 +1581,8 @@
       const bearing = compassDegrees(Math.atan2(enemy.y - player.y, enemy.x - player.x));
       const rel = ((bearing - heading + 540) % 360) - 180;
       const sx = VIEW_W / 2 + rel / 180 * (w / 2 - 12);
-      ctx.fillStyle = rel > -HALF_FOV * 180 / Math.PI && rel < HALF_FOV * 180 / Math.PI ? "#ef7660" : "#b99066";
+      const visibleHalf = currentHalfFov() * 180 / Math.PI;
+      ctx.fillStyle = rel > -visibleHalf && rel < visibleHalf ? "#ef7660" : "#b99066";
       ctx.beginPath();
       ctx.moveTo(sx, y + 25);
       ctx.lineTo(sx - 4, y + 33);
@@ -1613,6 +1688,7 @@
     drawBullets();
     drawWorldEffects();
     drawFirstPersonCannon();
+    drawAimOverlay();
     drawCompass();
     drawReticle();
     drawJoystick(touches.left);
@@ -1659,6 +1735,7 @@
     setText("hud-hull-bearing", compassText(player.angle));
     setText("hud-turret-bearing", compassText(player.turretAngle));
     setText("hud-relative", Math.round(relativeDegrees(angleDelta(player.angle, player.turretAngle))) + "°");
+    setText("hud-zoom", player.aiming ? "1.7×" : "1×");
     const syncLabel = $("sync-status");
     if (syncLabel) {
       if (typeof navigator !== "undefined" && navigator.onLine === false) syncLabel.textContent = "离线 · 本机存档";
@@ -1692,14 +1769,22 @@
 
   const updateMobileControls = () => {
     const fire = $("mobile-fire");
-    if (!fire) return;
-    fire.classList.toggle("hidden", state !== "playing" || locked);
+    const aim = $("mobile-aim");
+    const hidden = state !== "playing" || locked;
+    if (fire) fire.classList.toggle("hidden", hidden);
+    if (aim) {
+      aim.classList.toggle("hidden", hidden);
+      aim.classList.toggle("active", !!(player && player.aiming));
+      aim.textContent = player && player.aiming ? "收镜" : "瞄准";
+      aim.setAttribute("aria-pressed", player && player.aiming ? "true" : "false");
+    }
   };
 
   const showMenu = () => {
     state = "menu";
     keys.clear();
     fireHeld = false;
+    if (player) player.aiming = false;
     setOverlay("menu", true);
     setOverlay("pause-modal", false);
     setOverlay("result-modal", false);
@@ -1739,6 +1824,7 @@
     state = "paused";
     fireHeld = false;
     keys.clear();
+    if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
     setOverlay("pause-modal", true);
     const info = $("pause-info");
@@ -1769,6 +1855,7 @@
     battleEndedAt = performance.now();
     fireHeld = false;
     keys.clear();
+    if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
     const duration = Math.max(1, Math.round((battleEndedAt - battleStartedAt) / 1000));
     const accuracy = shotsFired ? Math.round(shotsHit / shotsFired * 100) : 0;
@@ -1811,6 +1898,7 @@
       state = "paused";
       setOverlay("pause-modal", false);
     }
+    if (player) player.aiming = false;
     setOverlay("time-lock", true);
     updateMobileControls();
   };
@@ -1860,7 +1948,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=5").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=6").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -1940,6 +2028,14 @@
       mobileFire.addEventListener("pointercancel", release);
       mobileFire.addEventListener("pointerleave", release);
     }
+    $("mobile-aim")?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!player || state !== "playing" || locked) return;
+      player.aiming = !player.aiming;
+      updateMobileControls();
+      updateHud();
+    });
     $("btn-lock-close")?.addEventListener("click", () => setOverlay("time-lock", false));
     $("rotate-hint-close")?.addEventListener("click", () => {
       const hint = $("rotate-hint");
@@ -2010,6 +2106,8 @@
         angle: player.angle,
         turretAngle: player.turretAngle,
         pitch: player.pitch,
+        aiming: player.aiming,
+        zoom: player.aiming ? AIM_ZOOM : 1,
         hp: player.hp,
         ammo: player.ammo,
         reload: player.reload
@@ -2027,6 +2125,7 @@
         fixed: enemy.fixed
       })),
       visibleEnemyIds: visibleEnemies().map((enemy) => enemy.id),
+      threatCompassCount: enemies.length,
       enemyCount: enemies.length,
       bullets: bullets.length,
       kills,
@@ -2051,6 +2150,12 @@
     },
     setViewYaw: (angle) => {
       if (player) player.turretAngle = normalizeAngle(Number(angle) || 0);
+    },
+    setAiming: (value) => {
+      if (!player) return;
+      player.aiming = !!value;
+      updateMobileControls();
+      updateHud();
     },
     setHullYaw: (angle) => {
       if (player) player.angle = normalizeAngle(Number(angle) || 0);

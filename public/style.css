@@ -304,10 +304,10 @@ button {
   cursor: crosshair;
 }
 
-.mobile-fire {
+.mobile-fire,
+.mobile-aim {
   position: fixed;
   right: 18px;
-  bottom: max(112px, env(safe-area-inset-bottom) + 92px);
   z-index: 1000;
   width: 68px;
   height: 68px;
@@ -316,7 +316,6 @@ button {
   justify-content: center;
   border: 1px solid rgba(241, 217, 144, .72);
   border-radius: 50%;
-  background: radial-gradient(circle at 42% 35%, #d97845, #8e351f 72%);
   color: #fff7d5;
   box-shadow: 0 8px 28px rgba(17, 9, 4, .42), inset 0 0 0 5px rgba(255, 255, 255, .06);
   font-size: 14px;
@@ -325,8 +324,31 @@ button {
   touch-action: none;
 }
 
-.mobile-fire:active {
+.mobile-fire {
+  bottom: max(112px, env(safe-area-inset-bottom) + 92px);
+  background: radial-gradient(circle at 42% 35%, #d97845, #8e351f 72%);
+}
+
+.mobile-aim {
+  right: 110px;
+  bottom: max(112px, env(safe-area-inset-bottom) + 92px);
+  border-color: rgba(193, 231, 164, .7);
+  background: radial-gradient(circle at 42% 35%, #587b5b, #263d31 72%);
+  color: #edf5ce;
+}
+
+.mobile-aim.active {
+  background: radial-gradient(circle at 42% 35%, #d8ed88, #6f8b3f 72%);
+  color: #17200f;
+  box-shadow: 0 0 0 4px rgba(217, 238, 146, .18), 0 8px 32px rgba(15, 19, 10, .5);
+}
+
+.mobile-fire:active,
+.mobile-aim:active {
   transform: scale(.95);
+}
+
+.mobile-fire:active {
   background: radial-gradient(circle at 42% 35%, #ffe8a6, #a84f2e);
 }
 
@@ -1225,7 +1247,8 @@ kbd {
 }
 
 @media (pointer: coarse) {
-  #mobile-fire:not(.hidden) {
+  #mobile-fire:not(.hidden),
+  #mobile-aim:not(.hidden) {
     display: flex;
   }
 }

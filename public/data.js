@@ -188,6 +188,15 @@ window.TankData = (() => {
     }
   };
 
+  // 后续原创 PNG/WebP 素材接入点。保持空字符串时使用当前 Canvas 矢量 fallback。
+  const COVER_ART = {
+    concrete: { normal: "", damaged: "", aspect: 1.9 },
+    sandbag: { normal: "", damaged: "", aspect: 2.2 },
+    wood: { normal: "", damaged: "", aspect: 2.0 },
+    earth: { normal: "", damaged: "", aspect: 2.1 },
+    wreck: { normal: "", damaged: "", aspect: 1.65 }
+  };
+
   const cloneObstacles = () => OBSTACLES.map((o) => ({ ...o }));
   const cloneSpawns = () => SPAWNS.map((s) => ({ ...s }));
 
@@ -196,6 +205,7 @@ window.TankData = (() => {
     TANKS,
     WORLD,
     OBSTACLE_TYPES,
+    COVER_ART,
     cloneObstacles,
     cloneSpawns
   };

@@ -1,15 +1,15 @@
 "use strict";
 
 // 缓存前缀由本应用独占：activate 时不得删除同域其他应用的缓存。
-const CACHE_VERSION = "dbtank-static-v5";
+const CACHE_VERSION = "dbtank-static-v6";
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css?v=5",
-  "./data.js?v=5",
-  "./sync.js?v=5",
-  "./game.js?v=5",
-  "./manifest.json?v=5",
+  "./style.css?v=6",
+  "./data.js?v=6",
+  "./sync.js?v=6",
+  "./game.js?v=6",
+  "./manifest.json?v=6",
   "./icons/favicon.svg",
   "./icons/icon-48.png",
   "./icons/icon-64.png",

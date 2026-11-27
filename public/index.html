@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=5">
+  <link rel="manifest" href="manifest.json?v=6">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.2.1</span>
+      <span class="version-badge" id="app-version">v0.2.2</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -72,6 +72,7 @@
       <span>车体 <b id="hud-hull-bearing">000°</b></span>
       <span>炮塔 <b id="hud-turret-bearing">000°</b></span>
       <span>相对 <b id="hud-relative">0°</b></span>
+      <span>视野 <b id="hud-zoom">1×</b></span>
       <span class="bearing-note">移动鼠标或右摇杆环视</span>
     </div>
 
@@ -87,6 +88,7 @@
       <div class="corner corner-br"></div>
       <canvas id="game" class="stage" width="1280" height="720" aria-label="坦克对战游戏画面"></canvas>
       <button id="mobile-fire" class="mobile-fire hidden" type="button">开火</button>
+      <button id="mobile-aim" class="mobile-aim hidden" type="button" aria-pressed="false">瞄准</button>
 
       <div id="menu" class="overlay menu-overlay">
         <div class="menu-panel">
@@ -116,14 +118,15 @@
                 <li><b class="side">侧面</b> 标准伤害</li>
                 <li><b class="rear">后部</b> 增伤 45%</li>
                 <li>10 座炮台同时存在，车体永不动</li>
+                <li>宽视野 1× · 炮长镜约 1.7×</li>
               </ul>
             </div>
             <div>
               <h2>操控</h2>
               <ul class="rules-compact controls-list">
                 <li><kbd>W/S</kbd> 前进 / 倒车　<kbd>A/D</kbd> 车体转向</li>
-                <li><kbd>鼠标</kbd> 360° 环视　<kbd>左键</kbd> 开火　<kbd>R</kbd> 装填</li>
-                <li><kbd>手机</kbd> 左摇杆驾驶，右摇杆环视，独立开火键</li>
+                <li><kbd>鼠标</kbd> 360° 环视　<kbd>右键</kbd> 1.7× 炮长镜　<kbd>左键</kbd> 开火</li>
+                <li><kbd>手机</kbd> 左摇杆驾驶，右摇杆环视，独立开火/瞄准键</li>
                 <li><kbd>Esc</kbd> 暂停</li>
               </ul>
             </div>
@@ -187,7 +190,7 @@
         <div>
           <h2>打赢钢铁代差</h2>
           <ul>
-            <li>这是炮塔/车长第一人称视角；移动鼠标或右摇杆可连续环视 360°，不会显示完整俯视地图。</li>
+            <li>这是炮塔/车长第一人称视角；宽视野为 1×，按住鼠标右键或切换手机“瞄准”可进入约 1.7× 炮长镜，开镜时仍可环视、移动和开火。</li>
             <li>敌方车体生成后不会移动或转向，只有炮塔按有限速度追踪；10 座炮台从开局起全部独立装填和射击。</li>
             <li>木障与沙袋可被炮弹摧毁；混凝土永久阻挡。击毁坦克留下的残骸会成为新掩体。</li>
             <li>固定炮台不检查视线，只判断炮塔对准和射程；炮弹会真实撞上混凝土、沙袋、木障、敌车与残骸，因此掩体只能提供临时保护。</li>
@@ -229,9 +232,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=5"></script>
-  <script src="sync.js?v=5"></script>
-  <script src="game.js?v=5"></script>
+  <script src="data.js?v=6"></script>
+  <script src="sync.js?v=6"></script>
+  <script src="game.js?v=6"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {

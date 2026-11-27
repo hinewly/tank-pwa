@@ -110,21 +110,57 @@ async function run() {
 
     await desktop.click("#btn-start");
     await desktop.waitForTimeout(500);
+    const canvasBox = await desktop.locator("#game").boundingBox();
     if (shotDir) {
       await desktop.screenshot({
         path: path.join(shotDir, "PC端-第一人称战斗-20261127.png"),
         fullPage: true
       });
     }
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(100);
     const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+    const aimStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.mouse.down({ button: "right" });
+    await desktop.waitForTimeout(220);
+    const aimOpen = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.mouse.up({ button: "right" });
+    await desktop.waitForTimeout(160);
+    const aimClosed = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.pcAim = {
+      open: aimOpen.player.aiming,
+      openZoom: aimOpen.player.zoom,
+      closed: aimClosed.player.aiming,
+      closedZoom: aimClosed.player.zoom,
+      hullPreserved: Math.abs(aimOpen.player.angle - aimStart.player.angle) < 1e-9 &&
+        Math.abs(aimClosed.player.angle - aimStart.player.angle) < 1e-9,
+      turretPreserved: Math.abs(aimOpen.player.turretAngle - aimStart.player.turretAngle) < 1e-9 &&
+        Math.abs(aimClosed.player.turretAngle - aimStart.player.turretAngle) < 1e-9,
+      ammoPreserved: aimOpen.player.ammo === aimStart.player.ammo,
+      compassCount: aimOpen.threatCompassCount,
+      contextMenuBlocked: await desktop.evaluate(() => {
+        const canvas = document.getElementById("game");
+        return !canvas.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      })
+    };
+    await desktop.evaluate(() => window.__tankTest.setViewYaw(-Math.PI / 2));
+    await desktop.mouse.down({ button: "right" });
+    await desktop.waitForTimeout(140);
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-第一人称开镜-20261127.png"),
+        fullPage: true
+      });
+    }
+    await desktop.mouse.up({ button: "right" });
     const beforeMove = initial.player;
     await desktop.keyboard.down("w");
     await desktop.waitForTimeout(600);
     await desktop.keyboard.up("w");
-    await desktop.keyboard.down("a");
+    await desktop.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })));
     await desktop.waitForTimeout(320);
-    await desktop.keyboard.up("a");
-    const canvasBox = await desktop.locator("#game").boundingBox();
+    await desktop.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true })));
     const yawBeforeMouse = await desktop.evaluate(() => window.__tankTest.getSnapshot().player.turretAngle);
     await desktop.mouse.move(canvasBox.x + canvasBox.width * 0.46, canvasBox.y + canvasBox.height * 0.48);
     await desktop.mouse.down();
@@ -181,12 +217,23 @@ async function run() {
       window.__tankTest.aimAt(target.x, target.y);
     }, projectionTarget);
     const projectionAfter = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
+    await desktop.mouse.down({ button: "right" });
+    await desktop.waitForTimeout(120);
+    const aimCombatStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.keyboard.down("s");
+    await desktop.waitForTimeout(180);
+    await desktop.keyboard.up("s");
+    await desktop.evaluate((target) => window.__tankTest.aimAt(target.x, target.y), projectionTarget);
     await desktop.evaluate(() => window.__tankTest.fire());
     await desktop.waitForTimeout(650);
-    const targetAfterShot = await desktop.evaluate((target) => {
+    const aimCombatEnd = await desktop.evaluate((target) => {
       const snapshot = window.__tankTest.getSnapshot();
-      return snapshot.enemies.find((enemy) => enemy.id === target.id);
+      return {
+        enemy: snapshot.enemies.find((enemy) => enemy.id === target.id),
+        player: snapshot.player
+      };
     }, projectionTarget);
+    await desktop.mouse.up({ button: "right" });
     report.projection = {
       beforeDepth: projectionBefore && projectionBefore.depth,
       afterDepth: projectionAfter && projectionAfter.depth,
@@ -194,13 +241,21 @@ async function run() {
       afterScale: projectionAfter && projectionAfter.scale,
       afterScreenX: projectionAfter && projectionAfter.x,
       closerScaleGrew: !!(projectionBefore && projectionAfter && projectionAfter.scale > projectionBefore.scale),
-      aimedShotHit: !!(targetAfterShot && targetAfterShot.hp < 92),
-      targetHpAfterShot: targetAfterShot && targetAfterShot.hp
+      aimedShotHit: !!(aimCombatEnd.enemy && aimCombatEnd.enemy.hp < 92),
+      targetHpAfterShot: aimCombatEnd.enemy && aimCombatEnd.enemy.hp,
+      aimingDuringShot: aimCombatStart.player.aiming && aimCombatEnd.player.aiming,
+      movedWhileAiming: Math.hypot(
+        aimCombatEnd.player.x - aimCombatStart.player.x,
+        aimCombatEnd.player.y - aimCombatStart.player.y
+      ) > 0.2
     };
 
     await desktop.evaluate(() => window.__tankTest.setViewYaw(Math.atan2(190 - 750, 1100 - 1100)));
     await desktop.waitForTimeout(120);
-    await desktop.keyboard.press("Escape");
+    await desktop.evaluate(() => {
+      if (document.exitPointerLock) document.exitPointerLock();
+    });
+    await desktop.click("#btn-pause");
     await desktop.waitForTimeout(120);
     report.desktopPause = await desktop.evaluate(() => ({
       state: window.__tankTest.state,
@@ -314,6 +369,41 @@ async function run() {
       });
     }
     const mobileBox = await mobile.locator("#game").boundingBox();
+    const mobileAimInfo = await mobile.evaluate(() => {
+      const aim = document.getElementById("mobile-aim");
+      const fire = document.getElementById("mobile-fire");
+      const ar = aim.getBoundingClientRect();
+      const fr = fire.getBoundingClientRect();
+      return {
+        visible: ar.width > 0 && ar.height > 0 && getComputedStyle(aim).display !== "none",
+        aim: { x: ar.x, y: ar.y, width: ar.width, height: ar.height },
+        fire: { x: fr.x, y: fr.y, width: fr.width, height: fr.height },
+        overlapped: !(ar.right <= fr.left || fr.right <= ar.left || ar.bottom <= fr.top || fr.bottom <= ar.top)
+      };
+    });
+    const mobileAimStart = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    await mobile.locator("#mobile-aim").dispatchEvent("pointerdown", {
+      pointerId: 40,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
+    await mobile.waitForTimeout(180);
+    const mobileAimOpen = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    if (shotDir) {
+      await mobile.screenshot({
+        path: path.join(shotDir, "手机横屏-第一人称开镜-20261127.png"),
+        fullPage: false
+      });
+    }
+    await mobile.locator("#mobile-aim").dispatchEvent("pointerdown", {
+      pointerId: 40,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
+    await mobile.waitForTimeout(150);
+    const mobileAimClosed = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     const beforeTouch = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
@@ -466,6 +556,16 @@ async function run() {
       fireButtonInfo,
       ammoAfterFire: afterFire.player.ammo,
       enemyCount: afterFire.enemyCount,
+      aim: {
+        visible: mobileAimInfo.visible,
+        overlapped: mobileAimInfo.overlapped,
+        openZoom: mobileAimOpen.player.zoom,
+        closedZoom: mobileAimClosed.player.zoom,
+        open: mobileAimOpen.player.aiming,
+        closed: mobileAimClosed.player.aiming,
+        hullPreserved: Math.abs(mobileAimClosed.player.angle - mobileAimStart.player.angle) < 1e-9,
+        turretPreserved: Math.abs(mobileAimClosed.player.turretAngle - mobileAimStart.player.turretAngle) < 1e-9
+      },
       bodyOverflowX: await mobile.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     };
     report.mobileErrors = mobileErrors;
@@ -492,6 +592,17 @@ async function run() {
     ring.seen === 10 &&
     projection.closerScaleGrew &&
     projection.aimedShotHit &&
+    projection.aimingDuringShot &&
+    projection.movedWhileAiming &&
+    report.pcAim.open &&
+    report.pcAim.openZoom === 1.7 &&
+    !report.pcAim.closed &&
+    report.pcAim.closedZoom === 1 &&
+    report.pcAim.hullPreserved &&
+    report.pcAim.turretPreserved &&
+    report.pcAim.ammoPreserved &&
+    report.pcAim.compassCount === 10 &&
+    report.pcAim.contextMenuBlocked &&
     fixed.initialEnemyCount === 10 &&
     fixed.survivors === 10 &&
     fixed.sameEnemySet &&
@@ -504,6 +615,14 @@ async function run() {
     mobile.enemyCount === 10 &&
     mobile.fireButtonVisible &&
     mobile.ammoAfterFire < mobile.before.ammo &&
+    mobile.aim.visible &&
+    !mobile.aim.overlapped &&
+    mobile.aim.open &&
+    mobile.aim.openZoom === 1.7 &&
+    !mobile.aim.closed &&
+    mobile.aim.closedZoom === 1 &&
+    mobile.aim.hullPreserved &&
+    mobile.aim.turretPreserved &&
     Math.abs(mobile.lookChanged) > 0.02 &&
     mobile.dualMoved > 0.5 &&
     Math.abs(mobile.dualLookChanged) > 0.02 &&
