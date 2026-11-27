@@ -4,17 +4,20 @@
 window.TankData = (() => {
   const BATTLE = {
     enemyTotal: 10,
-    playerHp: 100,
-    enemyHp: 92,
-    playerDamage: 42,
-    enemyDamage: 30,
-    magazineSize: 5,
-    playerReload: 2.25,
-    enemyReload: 3.05,
+    // 默认采用新手难度：玩家能承受多轮炮击，虎式首轮错峰且存在散布。
+    playerHp: 180,
+    enemyHp: 80,
+    playerDamage: 80,
+    enemyDamage: 10,
+    // 坦克主炮单发制：每次击发后必须重新装填，按住开火键不会自动连发。
+    magazineSize: 1,
+    playerReload: 2.9,
+    enemyReload: 5.2,
     enemyRange: 800,
     playerRange: 800,
-    enemyAimBias: 0.035,
-    fireCooldown: 0.16,
+    enemyAimBias: 0.065,
+    enemySpread: 0.16,
+    fireCooldown: 0.35,
     bulletSpeed: 980,
     battleSoftCap: 480,
     comboWindow: 5.2,
@@ -61,7 +64,7 @@ window.TankData = (() => {
       turretLength: 24,
       barrelLength: 46,
       radius: 29,
-      turretTurnRate: 1.48,
+      turretTurnRate: 0.72,
       colors: {
         body: "#8b7149",
         bodyDark: "#57452c",
@@ -129,18 +132,18 @@ window.TankData = (() => {
   ];
 
   const SPAWNS = [
-    // 北队 5 座：西翼、西北、正北、东北、东翼。
-    { x: 560, y: 450 },
-    { x: 820, y: 260 },
-    { x: 1100, y: 190 },
-    { x: 1380, y: 260 },
-    { x: 1640, y: 450 },
-    // 南队 5 座：西翼、西南、正南、东南、东翼。
-    { x: 560, y: 1050 },
-    { x: 820, y: 1240 },
-    { x: 1100, y: 1310 },
-    { x: 1380, y: 1240 },
-    { x: 1640, y: 1050 }
+    // 北队 5 座：把固定炮台拉到 700～754m 环带，留出观察和横向规避空间。
+    { x: 400, y: 470 },
+    { x: 620, y: 210 },
+    { x: 1100, y: 50 },
+    { x: 1580, y: 210 },
+    { x: 1800, y: 470 },
+    // 南队 5 座：与北队镜像布置，全部仍在 800m 有效射程内。
+    { x: 400, y: 1030 },
+    { x: 620, y: 1290 },
+    { x: 1100, y: 1450 },
+    { x: 1580, y: 1290 },
+    { x: 1800, y: 1030 }
   ];
 
   const OBSTACLE_TYPES = {

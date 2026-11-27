@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.3.1";
+  const APP_VERSION = "v0.4.0";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -21,6 +21,14 @@
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   const MOUSE_SENSITIVITY = 0.00225;
   const STICK_LOOK_SPEED = 2.35;
+  const MINIMAP = {
+    x: 14,
+    y: 70,
+    width: 148,
+    height: 154,
+    radius: 60,
+    worldRadius: 820
+  };
   const OBSTACLE_WIDTH_FACTOR = {
     concrete: 0.72,
     wood: 0.78,
@@ -61,6 +69,10 @@
   let damageFlash = 0;
   let hitMarker = 0;
   let cockpitMuzzleFlash = 0;
+  let hullBobPhase = 0;
+  let hullBobX = 0;
+  let hullBobY = 0;
+  let hullTurnSignal = 0;
   let toastTimer = 0;
   let deferredInstallPrompt = null;
   let installDismissed = false;
@@ -68,7 +80,6 @@
   let backdropImages = new Map();
   let saveData = Sync ? Sync.loadLocal() : null;
   let muted = !!(saveData && saveData.settings && saveData.settings.muted);
-  let fireHeld = false;
   let mouseDragging = false;
   let lastPointerX = 0;
   let lastPointerY = 0;
@@ -220,9 +231,9 @@
       unlock: get,
       click: () => tone(520, 760, 0.07, "triangle", 0.08),
       shoot: (isPlayer) => {
-        noise(isPlayer ? 0.19 : 0.13, isPlayer ? 0.38 : 0.2, isPlayer ? 1500 : 980);
-        tone(isPlayer ? 220 : 155, 48, 0.22, "square", isPlayer ? 0.2 : 0.12);
-        tone(100, 40, 0.3, "triangle", 0.11);
+        noise(isPlayer ? 0.4 : 0.26, isPlayer ? 0.54 : 0.26, isPlayer ? 920 : 720);
+        tone(isPlayer ? 145 : 118, 31, 0.44, "sawtooth", isPlayer ? 0.24 : 0.13);
+        tone(82, 27, 0.52, "triangle", isPlayer ? 0.16 : 0.09);
       },
       empty: () => tone(760, 520, 0.06, "square", 0.06),
       reload: () => {
@@ -362,7 +373,8 @@
     radius: TANK_TYPES.type99a.radius,
     alive: true,
     recoil: 0,
-    hitFlash: 0
+    hitFlash: 0,
+    muzzleFlash: 0
   });
 
   const makeEnemy = (spawn, slot) => ({
@@ -378,7 +390,7 @@
     targetAim: 0,
     aimBias: (Math.random() - 0.5) * B.enemyAimBias,
     fireCooldown: 0,
-    reload: 1 + slot * 0.13 + Math.random() * 0.22,
+    reload: 2.8 + slot * 0.45 + Math.random() * 0.5,
     reloadDuration: B.enemyReload,
     ammo: B.magazineSize,
     shotsFired: 0,
@@ -387,7 +399,8 @@
     radius: TANK_TYPES.tiger.radius,
     alive: true,
     recoil: 0,
-    hitFlash: 0
+    hitFlash: 0,
+    muzzleFlash: 0
   });
 
   const resetBattle = () => {
@@ -419,6 +432,10 @@
     damageFlash = 0;
     hitMarker = 0;
     cockpitMuzzleFlash = 0;
+    hullBobPhase = 0;
+    hullBobX = 0;
+    hullBobY = 0;
+    hullTurnSignal = 0;
     battleEndedAt = 0;
     battleStartedAt = performance.now();
     player = makePlayer(WORLD.playerSpawn);
@@ -462,6 +479,12 @@
     }
   };
 
+  const addImpactExplosion = (x, y, large = false) => {
+    addBurst(x, y, large ? "#ffb347" : "#f7c56d", large ? 30 : 16, large ? 230 : 150);
+    addBurst(x, y, "rgba(55,54,48,.82)", large ? 18 : 9, large ? 130 : 82);
+    addRing(x, y, large ? 72 : 38, "rgba(255,196,108,.72)", large ? 0.58 : 0.34);
+  };
+
   const armorProfile = (tank, impactDirection) => {
     const relative = Math.abs(angleDelta(impactDirection, tank.angle));
     if (relative > (Math.PI * 2) / 3) {
@@ -485,6 +508,7 @@
     tank.fireCooldown = Math.max(0, tank.fireCooldown - dt);
     tank.recoil = Math.max(0, tank.recoil - dt * 28);
     tank.hitFlash = Math.max(0, tank.hitFlash - dt * 4);
+    tank.muzzleFlash = Math.max(0, tank.muzzleFlash - dt * 3.8);
     if (tank.reload > 0) {
       tank.reload = Math.max(0, tank.reload - dt);
       if (tank.reload === 0) {
@@ -502,7 +526,9 @@
       startReload(tank);
       return false;
     }
-    const shotAngle = forcedAngle === null ? tank.turretAngle : forcedAngle;
+    const shotAngle = forcedAngle === null
+      ? normalizeAngle(tank.turretAngle + (tank.isPlayer ? 0 : (Math.random() * 2 - 1) * B.enemySpread))
+      : forcedAngle;
     const muzzleDistance = tank.type.hullLength * 0.22 + tank.type.barrelLength - tank.recoil;
     const x = tank.x + Math.cos(shotAngle) * muzzleDistance;
     const y = tank.y + Math.sin(shotAngle) * muzzleDistance;
@@ -523,28 +549,30 @@
     tank.ammo -= 1;
     tank.shotsFired += 1;
     tank.fireCooldown = B.fireCooldown;
-    tank.recoil = 7;
+    tank.recoil = 12;
+    tank.muzzleFlash = 1;
     if (tank.ammo <= 0) tank.reload = tank.reloadDuration;
     if (tank.isPlayer) {
       shotsFired += 1;
-      screenShake = Math.max(screenShake, 2);
+      screenShake = Math.max(screenShake, 6);
       cockpitMuzzleFlash = 1;
     }
     AudioFx.shoot(tank.isPlayer);
-    addBurst(x, y, tank.isPlayer ? "#ffe58a" : "#ffb15d", 8, 100);
+    addBurst(x, y, tank.isPlayer ? "#ffe08a" : "#ffb15d", 12, 145);
+    addBurst(x, y, "rgba(73,70,62,.72)", 9, 90);
     return true;
   };
 
   const damageObstacle = (obstacle, bullet) => {
     if (!obstacle || obstacle.destroyed) return;
     if (obstacle.hp === null) {
-      addBurst(bullet.x, bullet.y, "#f6d58b", 9, 100);
+      addImpactExplosion(bullet.x, bullet.y);
       AudioFx.hit("front");
       return;
     }
     obstacle.hp -= bullet.damage;
     obstacle.hitFlash = 1;
-    addBurst(bullet.x, bullet.y, D.OBSTACLE_TYPES[obstacle.type].edge, 12, 120);
+    addImpactExplosion(bullet.x, bullet.y);
     if (obstacle.hp <= 0) {
       obstacle.destroyed = true;
       addBurst(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2, "#b57b43", 36, 190);
@@ -580,6 +608,7 @@
     if (!tank || !tank.alive) return;
     tank.alive = false;
     addWreck(tank);
+    addImpactExplosion(tank.x, tank.y, true);
     addBurst(tank.x, tank.y, "#ffb347", 50, 280);
     addBurst(tank.x, tank.y, "#333a31", 28, 150);
     addRing(tank.x, tank.y, 100, "rgba(255,183,86,.8)", 0.7);
@@ -626,7 +655,7 @@
       hitMarker = 0.3;
     }
     if (target.isPlayer) damageFlash = Math.max(damageFlash, 0.7);
-    addBurst(bullet.x, bullet.y, armor.color, 15, 160);
+    addImpactExplosion(bullet.x, bullet.y);
     addFloat(target.x, target.y, armor.label + " -" + damage, armor.color, 18);
     screenShake = Math.max(screenShake, target.isPlayer ? 8 : 4);
     AudioFx.hit(armor.zone);
@@ -662,8 +691,16 @@
     const turnSpeed = player.type.hullTurnRate * (0.58 + 0.42 * clamp(Math.abs(player.speed) / 70, 0, 1));
     player.angle = normalizeAngle(player.angle + steer * turnSpeed * dt);
     movePlayer(Math.cos(player.angle) * player.speed * dt, Math.sin(player.angle) * player.speed * dt);
+    hullTurnSignal = Math.abs(steer) > 0.08 ? 1 : Math.max(0, hullTurnSignal - dt * 4);
+    const motionStrength = clamp(
+      Math.abs(player.speed) / player.type.maxForward + Math.abs(steer) * 0.32,
+      0,
+      1
+    );
+    hullBobPhase += dt * (2.2 + motionStrength * 12);
+    hullBobX = Math.sin(hullBobPhase * 1.7) * 2.6 * motionStrength + steer * 0.9 * motionStrength;
+    hullBobY = Math.sin(hullBobPhase * 3.15) * 3.4 * motionStrength;
     updateWeaponTimers(player, dt);
-    if (fireHeld) firePlayer();
   };
 
   const updateEnemy = (enemy, dt) => {
@@ -844,7 +881,6 @@
         lastPointerY = event.clientY;
         mouseDragging = true;
         if (event.button === 0) {
-          fireHeld = true;
           firePlayer();
         } else if (event.button === 2) {
           player.aiming = true;
@@ -887,7 +923,6 @@
     const endPointer = (event) => {
       if (event.pointerType === "mouse" || event.pointerType === "pen") {
         mouseDragging = false;
-        if (event.type === "pointerup" || event.type === "pointercancel") fireHeld = false;
         if (event.button === 2 && player) player.aiming = false;
       }
       for (const side of ["left", "right"]) {
@@ -904,7 +939,6 @@
     canvas.addEventListener("pointercancel", endPointer);
     window.addEventListener("pointerup", (event) => {
       mouseDragging = false;
-      if (event.button === 0 || event.pointerType !== "mouse") fireHeld = false;
       if (event.button === 2 && player) player.aiming = false;
     });
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
@@ -917,7 +951,7 @@
       AudioFx.unlock();
       keys.add(key);
       if (key === "r" && state === "playing" && !locked) startReload(player);
-      if (key === " " && state === "playing" && !locked) firePlayer();
+      if (key === " " && !event.repeat && state === "playing" && !locked) firePlayer();
       if (key === "escape" && (state === "playing" || state === "paused")) togglePause();
     });
     window.addEventListener("keyup", (event) => {
@@ -925,7 +959,6 @@
     });
     window.addEventListener("blur", () => {
       keys.clear();
-      fireHeld = false;
       mouseDragging = false;
       if (player) player.aiming = false;
       if (state === "playing") pauseGame(true);
@@ -1447,6 +1480,33 @@
     ctx.restore();
   };
 
+  const drawTankGrounding = (cx, baseY, width, height, alpha = 1) => {
+    const shadowWidth = Math.max(20, width * 0.74);
+    const shadowHeight = Math.max(6, height * 0.14);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, baseY + 2);
+    ctx.scale(1, shadowHeight / shadowWidth);
+    const gradient = ctx.createRadialGradient(0, 0, 1, 0, 0, shadowWidth * 0.55);
+    gradient.addColorStop(0, "rgba(7,10,7,.76)");
+    gradient.addColorStop(0.58, "rgba(9,13,8,.42)");
+    gradient.addColorStop(1, "rgba(10,15,9,0)");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, shadowWidth * 0.55, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.84;
+    ctx.fillStyle = "rgba(10,13,9,.68)";
+    ctx.beginPath();
+    ctx.ellipse(cx - width * 0.27, baseY + 1, width * 0.2, Math.max(2, height * 0.035), 0, 0, TAU);
+    ctx.ellipse(cx + width * 0.27, baseY + 1, width * 0.2, Math.max(2, height * 0.035), 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  };
+
   const drawVectorEnemy = (enemy, projection) => {
     const scale = projection.scale;
     const width = clamp(enemy.type.hullWidth * 1.65 * scale, 12, VIEW_W);
@@ -1455,11 +1515,9 @@
     const baseY = projection.groundY;
     const top = baseY - height;
     ctx.save();
-    ctx.globalAlpha = clamp(1.4 - projection.depth / 2100, 0.46, 1);
-    ctx.fillStyle = "rgba(16,22,13,.38)";
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY + height * 0.05, width * 0.58, height * 0.14, 0, 0, TAU);
-    ctx.fill();
+    const alpha = clamp(1.25 - projection.depth / 2300, 0.52, 1);
+    ctx.globalAlpha = alpha;
+    drawTankGrounding(cx, baseY, width, height, alpha);
 
     const colors = enemy.type.colors;
     ctx.fillStyle = colors.track;
@@ -1538,24 +1596,36 @@
       drawVectorEnemy(enemy, projection);
       return;
     }
-    const height = clamp(82 * projection.scale, 14, VIEW_H * 0.8);
+    const height = clamp(70 * projection.scale, 14, VIEW_H * 0.72);
     const width = clamp(height * sprite.naturalWidth / sprite.naturalHeight, 12, VIEW_W * 0.7);
     const cx = projection.x;
     const baseY = projection.groundY;
+    const atmospheric = clamp((projection.depth - 220) / 520, 0, 1);
     ctx.save();
-    ctx.globalAlpha = clamp(1.35 - projection.depth / 2200, 0.5, 1);
-    ctx.fillStyle = "rgba(14,20,12,.42)";
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY + 3, width * 0.48, Math.max(3, height * 0.1), 0, 0, TAU);
-    ctx.fill();
+    const alpha = clamp(1.2 - projection.depth / 2600, 0.6, 1);
+    ctx.globalAlpha = alpha;
+    drawTankGrounding(cx, baseY, width, height, alpha);
+    ctx.imageSmoothingQuality = "high";
+    if ("filter" in ctx) {
+      ctx.filter = "brightness(" + (1 - atmospheric * 0.16).toFixed(2) + ") " +
+        "saturate(" + (1 - atmospheric * 0.24).toFixed(2) + ") " +
+        "contrast(" + (1 - atmospheric * 0.07).toFixed(2) + ")";
+    }
+    const sink = Math.max(3, height * 0.06);
     if (selection.mirror) {
       ctx.translate(cx, baseY);
       ctx.scale(-1, 1);
-      ctx.drawImage(sprite, -width / 2, -height, width, height);
+      ctx.drawImage(sprite, -width / 2, -height + sink, width, height);
     } else {
-      ctx.drawImage(sprite, cx - width / 2, baseY - height, width, height);
+      ctx.drawImage(sprite, cx - width / 2, baseY - height + sink, width, height);
     }
     ctx.restore();
+
+    const contact = ctx.createLinearGradient(0, baseY - height * 0.1, 0, baseY + 4);
+    contact.addColorStop(0, "rgba(15,15,11,0)");
+    contact.addColorStop(1, "rgba(15,15,11,.25)");
+    ctx.fillStyle = contact;
+    ctx.fillRect(cx - width * 0.36, baseY - height * 0.1, width * 0.72, height * 0.1 + 4);
 
     const muzzleWorldX = enemy.x + Math.cos(enemy.turretAngle) * enemy.type.barrelLength;
     const muzzleWorldY = enemy.y + Math.sin(enemy.turretAngle) * enemy.type.barrelLength;
@@ -1577,6 +1647,27 @@
       ctx.beginPath();
       ctx.arc(muzzle.x, muzzle.y, clamp(4 * projection.scale, 2, 6), 0, TAU);
       ctx.fill();
+      if (enemy.muzzleFlash > 0) {
+        const alpha = clamp(enemy.muzzleFlash, 0, 1);
+        const radius = clamp(18 * projection.scale, 8, 28);
+        const glow = ctx.createRadialGradient(muzzle.x, muzzle.y, 1, muzzle.x, muzzle.y, radius);
+        glow.addColorStop(0, "rgba(255,248,197," + alpha + ")");
+        glow.addColorStop(0.28, "rgba(255,180,62," + alpha * 0.9 + ")");
+        glow.addColorStop(1, "rgba(255,96,27,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(muzzle.x, muzzle.y, radius, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,220,123," + alpha + ")";
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i += 1) {
+          const angle = i / 6 * TAU;
+          ctx.beginPath();
+          ctx.moveTo(muzzle.x + Math.cos(angle) * 4, muzzle.y + Math.sin(angle) * 4);
+          ctx.lineTo(muzzle.x + Math.cos(angle) * radius * 0.72, muzzle.y + Math.sin(angle) * radius * 0.72);
+          ctx.stroke();
+        }
+      }
     }
     if (enemy.hitFlash > 0) {
       ctx.fillStyle = "rgba(255,239,174," + clamp(enemy.hitFlash * 0.35, 0, 0.35) + ")";
@@ -1645,17 +1736,38 @@
       if (!p) continue;
       const previous = projectWorld(bullet.px, bullet.py, 27);
       if (previous) {
-        ctx.strokeStyle = bullet.isPlayer ? "rgba(244,255,188,.9)" : "rgba(255,150,90,.92)";
-        ctx.lineWidth = clamp(3.5 * p.scale, 1.5, 7);
+        const trailTone = bullet.isPlayer ? "214,190,132" : "189,139,84";
+        for (let i = 1; i <= 3; i += 1) {
+          const t = i * 0.16;
+          const px = lerp(previous.x, p.x, 1 - t);
+          const py = lerp(previous.y, p.y, 1 - t);
+          ctx.fillStyle = "rgba(" + trailTone + "," + (0.16 - i * 0.035) + ")";
+          ctx.beginPath();
+          ctx.arc(px, py, clamp((2.4 + i) * p.scale, 1, 8), 0, TAU);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "rgba(" + trailTone + ",.32)";
+        ctx.lineWidth = clamp(2.2 * p.scale, 1, 4);
         ctx.beginPath();
-        ctx.moveTo(previous.x, previous.y);
+        ctx.moveTo(lerp(previous.x, p.x, 0.45), lerp(previous.y, p.y, 0.45));
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
       }
-      ctx.fillStyle = bullet.isPlayer ? "#f6ffc7" : "#ffad63";
+      const shellLength = clamp(8 * p.scale, 4, 14);
+      const shellHeight = clamp(3.2 * p.scale, 1.4, 5);
+      const angle = Math.atan2(bullet.vy, bullet.vx);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(angle);
+      ctx.fillStyle = bullet.isPlayer ? "#38382f" : "#2e2922";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, clamp(3 * p.scale, 1.5, 8), 0, TAU);
+      ctx.ellipse(0, 0, shellLength, shellHeight, 0, 0, TAU);
       ctx.fill();
+      ctx.fillStyle = bullet.isPlayer ? "#ffd98f" : "#ff9b55";
+      ctx.beginPath();
+      ctx.ellipse(shellLength * 0.45, 0, shellLength * 0.18, shellHeight * 0.7, 0, 0, TAU);
+      ctx.fill();
+      ctx.restore();
     }
   };
 
@@ -1765,6 +1877,139 @@
     ctx.restore();
   };
 
+  const minimapPoint = (worldX, worldY) => {
+    const cx = MINIMAP.x + MINIMAP.width / 2;
+    const cy = MINIMAP.y + 78;
+    const dx = worldX - player.x;
+    const dy = worldY - player.y;
+    const right = -dx * Math.sin(player.turretAngle) + dy * Math.cos(player.turretAngle);
+    const forward = dx * Math.cos(player.turretAngle) + dy * Math.sin(player.turretAngle);
+    const distance = Math.hypot(right, forward);
+    const clampScale = distance > MINIMAP.worldRadius ? MINIMAP.worldRadius / distance : 1;
+    return {
+      x: cx + right * clampScale / MINIMAP.worldRadius * MINIMAP.radius,
+      y: cy - forward * clampScale / MINIMAP.worldRadius * MINIMAP.radius,
+      distance,
+      inside: distance <= MINIMAP.worldRadius
+    };
+  };
+
+  const drawMinimap = () => {
+    if (!player) return;
+    const cx = MINIMAP.x + MINIMAP.width / 2;
+    const cy = MINIMAP.y + 78;
+    ctx.save();
+    ctx.fillStyle = "rgba(8,14,9,.84)";
+    roundedRect(MINIMAP.x, MINIMAP.y, MINIMAP.width, MINIMAP.height, 14);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(213,231,155,.32)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = "#dce8b4";
+    ctx.font = "700 10px -apple-system,'PingFang SC',sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("战术雷达", MINIMAP.x + 10, MINIMAP.y + 16);
+    ctx.fillStyle = "rgba(205,220,168,.62)";
+    ctx.textAlign = "right";
+    ctx.fillText("800m", MINIMAP.x + MINIMAP.width - 10, MINIMAP.y + 16);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, MINIMAP.radius, 0, TAU);
+    ctx.clip();
+    const radarGlow = ctx.createRadialGradient(cx, cy, 4, cx, cy, MINIMAP.radius);
+    radarGlow.addColorStop(0, "rgba(78,104,57,.26)");
+    radarGlow.addColorStop(1, "rgba(7,14,8,.2)");
+    ctx.fillStyle = radarGlow;
+    ctx.fillRect(cx - MINIMAP.radius, cy - MINIMAP.radius, MINIMAP.radius * 2, MINIMAP.radius * 2);
+
+    ctx.strokeStyle = "rgba(210,227,165,.15)";
+    ctx.lineWidth = 1;
+    for (const factor of [1 / 3, 2 / 3, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, MINIMAP.radius * factor, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(cx - MINIMAP.radius, cy);
+    ctx.lineTo(cx + MINIMAP.radius, cy);
+    ctx.moveTo(cx, cy - MINIMAP.radius);
+    ctx.lineTo(cx, cy + MINIMAP.radius);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(128,139,116,.5)";
+    for (const obstacle of obstacles) {
+      if (obstacle.destroyed || !obstacle.blocks) continue;
+      const point = minimapPoint(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2);
+      if (!point.inside) continue;
+      const size = obstacle.type === "concrete" ? 3 : 2;
+      ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+    }
+
+    for (const enemy of enemies) {
+      const point = minimapPoint(enemy.x, enemy.y);
+      const relative = angleDelta(player.turretAngle, enemy.angle);
+      const radius = point.inside && point.distance <= B.enemyRange ? 4.5 : 3;
+      ctx.save();
+      ctx.translate(point.x, point.y);
+      ctx.rotate(relative);
+      ctx.fillStyle = point.distance <= B.enemyRange ? "#ee7457" : "#8f8069";
+      ctx.beginPath();
+      ctx.moveTo(0, -radius);
+      ctx.lineTo(radius * 0.75, radius * 0.72);
+      ctx.lineTo(-radius * 0.75, radius * 0.72);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      if (enemy.muzzleFlash > 0) {
+        ctx.strokeStyle = "rgba(255,190,85," + clamp(enemy.muzzleFlash, 0, 1) + ")";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 7, 0, TAU);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(226,239,179,.42)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, MINIMAP.radius, 0, TAU);
+    ctx.stroke();
+
+    const hullRelative = angleDelta(player.turretAngle, player.angle);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(hullRelative);
+    ctx.fillStyle = "#d8c66f";
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(5.5, 5);
+    ctx.lineTo(-5.5, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "#e6f59a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 2);
+    ctx.lineTo(cx, cy - 10);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(222,236,183,.72)";
+    ctx.font = "700 9px -apple-system,'PingFang SC',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("前", cx, cy - MINIMAP.radius + 11);
+    ctx.fillText("后", cx, cy + MINIMAP.radius - 4);
+    ctx.textAlign = "right";
+    ctx.fillText("左", cx - MINIMAP.radius + 9, cy + 3);
+    ctx.textAlign = "left";
+    ctx.fillText("右", cx + MINIMAP.radius - 9, cy + 3);
+    ctx.textAlign = "left";
+    ctx.restore();
+  };
+
   const drawCompass = () => {
     const x = 76;
     const y = 16;
@@ -1860,19 +2105,29 @@
     }
   };
 
-  const drawJoystick = (stick) => {
-    if (stick.id === null) return;
-    ctx.fillStyle = "rgba(10,17,8,.3)";
-    ctx.strokeStyle = "rgba(230,241,183,.46)";
+  const drawJoystick = (stick, idle = false) => {
+    if (!stick || (stick.id === null && !idle)) return;
+    ctx.save();
+    ctx.globalAlpha = idle ? 0.56 : 1;
+    ctx.fillStyle = idle ? "rgba(10,17,8,.2)" : "rgba(10,17,8,.3)";
+    ctx.strokeStyle = idle ? "rgba(230,241,183,.34)" : "rgba(230,241,183,.46)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(stick.baseX, stick.baseY, 64, 0, TAU);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "rgba(222,240,166,.42)";
+    ctx.fillStyle = idle ? "rgba(222,240,166,.24)" : "rgba(222,240,166,.42)";
     ctx.beginPath();
     ctx.arc(stick.baseX + stick.dx * 52, stick.baseY + stick.dy * 52, 23, 0, TAU);
     ctx.fill();
+    if (idle) {
+      ctx.fillStyle = "rgba(231,240,195,.7)";
+      ctx.font = "700 11px -apple-system,'PingFang SC',sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("驾驶", stick.baseX, stick.baseY + 4);
+      ctx.textAlign = "left";
+    }
+    ctx.restore();
   };
 
   const render = () => {
@@ -1883,7 +2138,9 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const shakeX = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
     const shakeY = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
-    ctx.setTransform(scaleX, 0, 0, scaleY, shakeX * scaleX, shakeY * scaleY);
+    const chassisX = shakeX + hullBobX;
+    const chassisY = shakeY + hullBobY + (player.recoil / 12) * 3.5;
+    ctx.setTransform(scaleX, 0, 0, scaleY, chassisX * scaleX, chassisY * scaleY);
     drawBackdrop();
 
     const drawables = [];
@@ -1905,10 +2162,17 @@
     drawWorldEffects();
     drawCockpitOverlay();
     drawFloats();
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
     drawAimOverlay();
     drawCompass();
+    drawMinimap();
     drawReticle();
-    drawJoystick(touches.left);
+    if (COARSE_POINTER || touches.left.id !== null) {
+      const idleStick = touches.left.id === null
+        ? { id: null, baseX: 176, baseY: VIEW_H - 118, dx: 0, dy: 0 }
+        : touches.left;
+      drawJoystick(idleStick, touches.left.id === null);
+    }
     drawJoystick(touches.right);
 
     const vignette = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.25, VIEW_W / 2, VIEW_H / 2, VIEW_W * 0.68);
@@ -1937,7 +2201,7 @@
     setText("hud-enemies", String(enemies.length));
     setText("hud-score", String(score));
     setText("hud-combo", combo > 1 ? "×" + combo : "—");
-    setText("hud-ammo", player.reload > 0 ? "装填中" : player.ammo + " / " + B.magazineSize);
+    setText("hud-ammo", player.reload > 0 ? "装填 " + player.reload.toFixed(1) + "s" : "待发");
     const reloadBar = $("hud-reload-bar");
     if (reloadBar) {
       const progress = player.reload > 0 ? 1 - player.reload / player.reloadDuration : 1;
@@ -1952,6 +2216,16 @@
     setText("hud-hull-bearing", compassText(player.angle));
     setText("hud-turret-bearing", compassText(player.turretAngle));
     setText("hud-relative", Math.round(relativeDegrees(angleDelta(player.angle, player.turretAngle))) + "°");
+    const motionElement = $("hud-motion");
+    if (motionElement) {
+      const speedPercent = Math.round(clamp(Math.abs(player.speed) / player.type.maxForward, 0, 1) * 100);
+      const moving = Math.abs(player.speed) > 2.5;
+      const motionText = moving
+        ? (player.speed > 0 ? "前进 " : "倒车 ") + speedPercent + "%"
+        : (hullTurnSignal > 0.08 ? "车体转向" : "静止");
+      motionElement.textContent = motionText;
+      motionElement.classList.toggle("moving", moving || hullTurnSignal > 0.08);
+    }
     setText("hud-zoom", player.aiming ? "1.7×" : "1×");
     const syncLabel = $("sync-status");
     if (syncLabel) {
@@ -2056,7 +2330,6 @@
   const showMenu = () => {
     state = "menu";
     keys.clear();
-    fireHeld = false;
     if (player) player.aiming = false;
     setOverlay("menu", true);
     setOverlay("pause-modal", false);
@@ -2097,7 +2370,6 @@
   const pauseGame = (automatic = false) => {
     if (state !== "playing" || locked) return;
     state = "paused";
-    fireHeld = false;
     keys.clear();
     if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
@@ -2128,7 +2400,6 @@
     if (state !== "playing") return;
     state = "result";
     battleEndedAt = performance.now();
-    fireHeld = false;
     keys.clear();
     if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
@@ -2223,7 +2494,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=8").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=9").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -2296,13 +2567,11 @@
       mobileFire.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        fireHeld = true;
         firePlayer();
       });
       const release = (event) => {
         event.preventDefault();
         event.stopPropagation();
-        fireHeld = false;
       };
       mobileFire.addEventListener("pointerup", release);
       mobileFire.addEventListener("pointercancel", release);
@@ -2392,11 +2661,15 @@
         angle: player.angle,
         turretAngle: player.turretAngle,
         pitch: player.pitch,
+        speed: player.speed,
+        hullTurnSignal,
         aiming: player.aiming,
         zoom: player.aiming ? AIM_ZOOM : 1,
         hp: player.hp,
         ammo: player.ammo,
-        reload: player.reload
+        reload: player.reload,
+        shotsFired: player.shotsFired,
+        muzzleFlash: player.muzzleFlash
       } : null,
       enemies: enemies.map((enemy) => ({
         id: enemy.id,
@@ -2408,18 +2681,30 @@
         ammo: enemy.ammo,
         reload: enemy.reload,
         shotsFired: enemy.shotsFired,
+        muzzleFlash: enemy.muzzleFlash,
         fixed: enemy.fixed
       })),
       visibleEnemyIds: visibleEnemies().map((enemy) => enemy.id),
       threatCompassCount: enemies.length,
       enemyRange: B.enemyRange,
       playerRange: B.playerRange,
+      playerReload: B.playerReload,
+      enemyReload: B.enemyReload,
+      difficulty: {
+        label: "新手",
+        playerHp: B.playerHp,
+        playerDamage: B.playerDamage,
+        enemyDamage: B.enemyDamage,
+        enemySpread: B.enemySpread
+      },
       enemyCount: enemies.length,
       bullets: bullets.length,
       cockpitMuzzleFlash,
       backdrop: selectedBackdrop,
       backdropReady: !!backdropImage(selectedBackdrop),
       cockpitReady: !!cockpitImage(),
+      enemyDistanceMin: enemies.length ? Math.min(...enemies.map((enemy) => distanceBetween(enemy, player))) : 0,
+      enemyDistanceMax: enemies.length ? Math.max(...enemies.map((enemy) => distanceBetween(enemy, player))) : 0,
       kills,
       score,
       obstacles: obstacles.map((obstacle) => ({ type: obstacle.type, hp: obstacle.hp, destroyed: obstacle.destroyed }))
@@ -2459,8 +2744,41 @@
     projectEnemy: (id) => {
       const enemy = enemies.find((item) => item.id === id);
       const p = enemy ? projectedEnemy(enemy) : null;
-      return p ? { x: p.x, y: p.y, width: p.width, height: p.height, depth: p.depth, scale: p.scale } : null;
+      return p ? {
+        x: p.x,
+        y: p.y,
+        width: p.width,
+        height: p.height,
+        groundY: p.groundY,
+        depth: p.depth,
+        scale: p.scale
+      } : null;
     },
+    minimapInfo: () => ({
+      visible: !!player,
+      enemyCount: enemies.length,
+      enemies: enemies.map((enemy) => {
+        const point = minimapPoint(enemy.x, enemy.y);
+        return {
+          id: enemy.id,
+          x: point.x,
+          y: point.y,
+          distance: point.distance,
+          inside: point.inside
+        };
+      })
+    }),
+    movementHud: () => ({
+      text: document.getElementById("hud-motion")?.textContent || "",
+      active: !!document.getElementById("hud-motion")?.classList.contains("moving"),
+      leftStickVisible: COARSE_POINTER && state === "playing" && !locked,
+      leftStickBase: {
+        x: 176,
+        y: VIEW_H - 118
+      },
+      chassisBobX: hullBobX,
+      chassisBobY: hullBobY
+    }),
     enemySpriteView: (id) => {
       const enemy = enemies.find((item) => item.id === id);
       return enemy ? enemySpriteView(enemy) : null;
@@ -2505,6 +2823,20 @@
       const enemy = enemies.find((item) => item.id === id);
       return enemy ? enemySpriteViewFor(enemy, x, y) : null;
     },
+    clearShotEnemyIds: () => enemies.filter((enemy) => {
+      if (!player || !enemy.alive || distanceBetween(player, enemy) > B.playerRange) return false;
+      const obstacleBlocked = obstacles.some((obstacle) =>
+        !obstacle.destroyed &&
+        obstacle.blocks &&
+        segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle) !== null
+      );
+      if (obstacleBlocked) return false;
+      return !enemies.some((other) =>
+        other !== enemy &&
+        other.alive &&
+        segmentCircleHit(player.x, player.y, enemy.x, enemy.y, other.x, other.y, other.radius) !== null
+      );
+    }).map((enemy) => enemy.id),
     enemyInRange: (id) => {
       const enemy = enemies.find((item) => item.id === id);
       return !!(enemy && player && distanceBetween(enemy, player) <= B.enemyRange);

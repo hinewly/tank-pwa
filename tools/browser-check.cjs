@@ -179,6 +179,8 @@ async function run() {
         shotsFired: target.shotsFired,
         range: snapshot.enemyRange,
         playerRange: snapshot.playerRange,
+        playerReload: snapshot.playerReload,
+        enemyReload: snapshot.enemyReload,
         moveOk: window.__tankTest.setPlayerPosition(2100, 1400)
       };
     });
@@ -199,6 +201,12 @@ async function run() {
     await desktop.evaluate(() => window.__tankTest.startBattle());
     await desktop.waitForTimeout(100);
     const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.battlefield = {
+      enemyDistanceMin: initial.enemyDistanceMin,
+      enemyDistanceMax: initial.enemyDistanceMax,
+      difficulty: initial.difficulty
+    };
+    report.minimap = await desktop.evaluate(() => window.__tankTest.minimapInfo());
     report.tankViews = await desktop.evaluate(() => {
       const enemy = window.__tankTest.getSnapshot().enemies[0];
       const at = (angle, distance) => ({
@@ -217,6 +225,41 @@ async function run() {
         spriteReady: window.__tankTest.enemySpriteReady(enemy.id)
       };
     });
+    await desktop.evaluate(() => {
+      window.__tankTest.startBattle();
+      window.__tankTest.setPlayerHp(9999);
+    });
+    await desktop.waitForTimeout(120);
+    const singleShotStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    await desktop.evaluate(() => {
+      const canvas = document.getElementById("game");
+      canvas.dispatchEvent(new PointerEvent("pointerdown", {
+        pointerId: 70,
+        pointerType: "mouse",
+        button: 0,
+        bubbles: true,
+        cancelable: true
+      }));
+    });
+    await desktop.waitForTimeout(3400);
+    await desktop.evaluate(() => {
+      const canvas = document.getElementById("game");
+      canvas.dispatchEvent(new PointerEvent("pointerup", {
+        pointerId: 70,
+        pointerType: "mouse",
+        button: 0,
+        bubbles: true,
+        cancelable: true
+      }));
+    });
+    const singleShotEnd = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.singleShot = {
+      shotsAdded: singleShotEnd.player.shotsFired - singleShotStart.player.shotsFired,
+      ammo: singleShotEnd.player.ammo,
+      reloadAfterHold: singleShotEnd.player.reload
+    };
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(120);
     await desktop.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
     const aimStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     await desktop.mouse.down({ button: "right" });
@@ -256,6 +299,16 @@ async function run() {
     const beforeMove = initial.player;
     await desktop.keyboard.down("w");
     await desktop.waitForTimeout(600);
+    const desktopMoving = await desktop.evaluate(() => ({
+      snapshot: window.__tankTest.getSnapshot(),
+      hud: window.__tankTest.movementHud()
+    }));
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-移动反馈-20261127.png"),
+        fullPage: true
+      });
+    }
     await desktop.keyboard.up("w");
     await desktop.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true })));
     await desktop.waitForTimeout(320);
@@ -275,6 +328,8 @@ async function run() {
       mouseAimChanged: Math.abs(afterPlay.player.turretAngle - yawBeforeMouse),
       ammoBefore: initial.player.ammo,
       ammoAfter: afterPlay.player.ammo,
+      movingSpeed: desktopMoving.snapshot.player.speed,
+      movingHud: desktopMoving.hud,
       pointerLock: await desktop.evaluate(() => document.pointerLockElement === document.getElementById("game"))
     };
 
@@ -308,11 +363,19 @@ async function run() {
       };
     });
 
+    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.waitForTimeout(120);
     const projectionTarget = await startAtEnemy(desktop, 2);
     const projectionBefore = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
     await desktop.evaluate((target) => {
+      const dx = 1100 - target.x;
+      const dy = 750 - target.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
       window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.setPlayerPosition(target.x, Math.max(36, target.y - 110));
+      window.__tankTest.setPlayerPosition(
+        target.x + dx / length * 110,
+        target.y + dy / length * 110
+      );
       window.__tankTest.aimAt(target.x, target.y);
     }, projectionTarget);
     const projectionAfter = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
@@ -398,7 +461,13 @@ async function run() {
       const before = fixedBeforeById.get(enemy.id);
       return Math.max(max, Math.abs(enemy.turretAngle - before.turretAngle));
     }, 0);
-    const firingEnemies = survivors.filter((enemy) => enemy.shotsFired > 0).length;
+    const maxShotsAdded = survivors.reduce((max, enemy) => {
+      const before = fixedBeforeById.get(enemy.id);
+      return Math.max(max, enemy.shotsFired - before.shotsFired);
+    }, 0);
+    const firingEnemies = survivors.filter((enemy) =>
+      enemy.shotsFired > fixedBeforeById.get(enemy.id).shotsFired
+    ).length;
     const enemyShots = survivors.reduce((sum, enemy) => sum + enemy.shotsFired, 0);
     const sameEnemySet = (
       fixedAfter.enemies.length === fixedBefore.enemies.length &&
@@ -411,9 +480,45 @@ async function run() {
       maxPositionDrift,
       maxHullAngleDrift,
       maxTurretTurn,
+      maxShotsAdded,
       firingEnemies,
       enemyShots,
       allFixedFlags: survivors.every((enemy) => enemy.fixed)
+    };
+
+    await desktop.evaluate(() => {
+      window.__tankTest.startBattle();
+      window.__tankTest.setPlayerPosition(1080, 1180);
+    });
+    await desktop.waitForTimeout(150);
+    const easyStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    let easyShots = 0;
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      const target = await desktop.evaluate(() => {
+        const snapshot = window.__tankTest.getSnapshot();
+        if (snapshot.state !== "playing") return null;
+        const clearIds = window.__tankTest.clearShotEnemyIds();
+        const enemy = snapshot.enemies.find((item) => clearIds.includes(item.id));
+        if (!enemy) return null;
+        window.__tankTest.aimAt(enemy.x, enemy.y);
+        return { id: enemy.id, hp: enemy.hp };
+      });
+      if (!target) break;
+      const fired = await desktop.evaluate(() => window.__tankTest.fire());
+      if (fired) easyShots += 1;
+      await desktop.waitForTimeout(3150);
+      const snapshot = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+      if (snapshot.state !== "playing" || snapshot.kills >= 3) break;
+    }
+    const easyEnd = await desktop.evaluate(() => window.__tankTest.getSnapshot());
+    report.easyCombat = {
+      state: easyEnd.state,
+      kills: easyEnd.kills,
+      shots: easyShots,
+      playerHp: easyEnd.player.hp,
+      enemyCount: easyEnd.enemyCount,
+      startX: easyStart.player.x,
+      startY: easyStart.player.y
     };
 
     await desktop.evaluate(() => window.__tankTest.eliminateAllEnemies());
@@ -530,6 +635,16 @@ async function run() {
       }));
     }, { width: mobileBox.width, height: mobileBox.height });
     await mobile.waitForTimeout(500);
+    const mobileMoving = await mobile.evaluate(() => ({
+      snapshot: window.__tankTest.getSnapshot(),
+      hud: window.__tankTest.movementHud()
+    }));
+    if (shotDir) {
+      await mobile.screenshot({
+        path: path.join(shotDir, "手机横屏-移动反馈-20261127.png"),
+        fullPage: false
+      });
+    }
     await mobile.evaluate(() => {
       const canvas = document.getElementById("game");
       canvas.dispatchEvent(new PointerEvent("pointerup", {
@@ -631,13 +746,14 @@ async function run() {
         topElement: document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.id || ""
       };
     });
+    const mobileFireStart = await mobile.evaluate(() => window.__tankTest.getSnapshot());
     await mobile.locator("#mobile-fire").dispatchEvent("pointerdown", {
       pointerId: 43,
       pointerType: "touch",
       bubbles: true,
       cancelable: true
     });
-    await mobile.waitForTimeout(260);
+    await mobile.waitForTimeout(3300);
     await mobile.locator("#mobile-fire").dispatchEvent("pointerup", {
       pointerId: 43,
       pointerType: "touch",
@@ -654,12 +770,15 @@ async function run() {
         ammo: beforeTouch.player.ammo
       },
       moved: Math.hypot(afterMove.player.x - beforeTouch.player.x, afterMove.player.y - beforeTouch.player.y),
+      movingSpeed: mobileMoving.snapshot.player.speed,
+      movingHud: mobileMoving.hud,
       hullChanged: Math.abs(afterMove.player.angle - beforeTouch.player.angle),
       lookChanged: Math.abs(afterLook.player.turretAngle - afterMove.player.turretAngle),
       dualMoved: Math.hypot(afterDual.player.x - beforeDual.player.x, afterDual.player.y - beforeDual.player.y),
       dualLookChanged: Math.abs(afterDual.player.turretAngle - beforeDual.player.turretAngle),
       fireButtonVisible: fireButtonInfo.visible,
       fireButtonInfo,
+      shotsAddedAfterHold: afterFire.player.shotsFired - mobileFireStart.player.shotsFired,
       ammoAfterFire: afterFire.player.ammo,
       enemyCount: afterFire.enemyCount,
       aim: {
@@ -697,6 +816,10 @@ async function run() {
   const range = report.range || {};
   const tankViews = report.tankViews || {};
   const cockpit = report.cockpit || {};
+  const battlefield = report.battlefield || {};
+  const minimap = report.minimap || {};
+  const singleShot = report.singleShot || {};
+  const easyCombat = report.easyCombat || {};
   const cockpitBase = cockpit.base || {};
   const cockpitAim = cockpit.aim || {};
   const passed = (
@@ -707,6 +830,8 @@ async function run() {
     Object.values(backdrops).every((item) => item.ready && item.selected) &&
     range.range === 800 &&
     range.playerRange === 800 &&
+    range.playerReload === 2.9 &&
+    range.enemyReload === 5.2 &&
     range.distance > 800 &&
     range.moveOk &&
     range.stayedOutOfRange &&
@@ -731,8 +856,23 @@ async function run() {
     cockpitAim.aimScale === 1.035 &&
     cockpit.flash?.active &&
     cockpit.flash.muzzleY > 360 + 20 &&
+    battlefield.enemyDistanceMin >= 690 &&
+    battlefield.enemyDistanceMax <= 800 &&
+    battlefield.difficulty?.label === "新手" &&
+    battlefield.difficulty.playerHp === 180 &&
+    battlefield.difficulty.playerDamage === 80 &&
+    battlefield.difficulty.enemyDamage === 10 &&
+    battlefield.difficulty.enemySpread === 0.16 &&
+    minimap.visible &&
+    minimap.enemyCount === 10 &&
+    minimap.enemies.length === 10 &&
+    minimap.enemies.every((enemy) => enemy.inside) &&
+    singleShot.shotsAdded === 1 &&
     report.desktopPlay.enemyCount === 10 &&
     report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
+    report.desktopPlay.movingSpeed > 10 &&
+    report.desktopPlay.movingHud.active &&
+    /前进|倒车|车体转向/.test(report.desktopPlay.movingHud.text) &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
@@ -757,12 +897,21 @@ async function run() {
     fixed.maxPositionDrift < 1e-9 &&
     fixed.maxHullAngleDrift < 1e-9 &&
     fixed.maxTurretTurn > 0.05 &&
+    fixed.maxShotsAdded <= 3 &&
     fixed.enemyShots > 0 &&
     fixed.firingEnemies >= 2 &&
     fixed.allFixedFlags &&
+    easyCombat.kills >= 2 &&
+    easyCombat.state === "playing" &&
+    easyCombat.playerHp > 0 &&
+    easyCombat.startX === 1080 &&
+    easyCombat.startY === 1180 &&
     mobile.enemyCount === 10 &&
     mobile.fireButtonVisible &&
-    mobile.ammoAfterFire < mobile.before.ammo &&
+    mobile.shotsAddedAfterHold === 1 &&
+    mobile.movingSpeed > 5 &&
+    mobile.movingHud.leftStickVisible &&
+    mobile.movingHud.active &&
     mobile.aim.visible &&
     !mobile.aim.overlapped &&
     mobile.aim.open &&

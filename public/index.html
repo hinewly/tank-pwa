@@ -9,20 +9,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>坦克对战：钢铁代差 - 99A 第一人称炮塔战 | 道盒 DaoBox</title>
-  <meta name="description" content="DaoBox 坦克对战：钢铁代差，以 99A 车长/炮塔第一人称视角环视 360°，突破四周同时开火的 10 座虎式固定炮台。无增援、无波次，利用装甲和掩体完成十面合围。">
+  <meta name="description" content="DaoBox 坦克对战：钢铁代差，以 99A 车长/炮塔第一人称视角环视 360°，用单发主炮和战术雷达突破 10 座固定虎式炮台。无增援、无波次，利用装甲和掩体完成十面合围。">
   <meta name="keywords" content="坦克对战,钢铁代差,99A,虎式坦克,坦克游戏,Canvas游戏,手机坦克游戏,在线坦克游戏">
   <meta property="og:title" content="坦克对战：钢铁代差 · 十面合围">
-  <meta property="og:description" content="进入 99A 第一人称炮塔视角，360° 环视并突破 10 座同时开火的虎式固定炮台。">
+  <meta property="og:description" content="进入 99A 第一人称炮塔视角，单发装填主炮、360° 环视，用战术雷达突破 10 座固定虎式炮台。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=8">
+  <link rel="manifest" href="manifest.json?v=9">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.3.1</span>
+      <span class="version-badge" id="app-version">v0.4.0</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -63,7 +63,7 @@
         <div class="hud-value accent"><strong id="hud-combo">—</strong></div>
       </div>
       <div class="hud-item hud-ammo">
-        <div class="hud-label"><span>炮塔 <i id="hud-turret">▲</i></span><strong id="hud-ammo">5 / 5</strong></div>
+        <div class="hud-label"><span>主炮 <i id="hud-turret">▲</i></span><strong id="hud-ammo">待发</strong></div>
         <div class="bar reload"><span id="hud-reload-bar"></span></div>
       </div>
       <button class="pause-btn" id="btn-pause" type="button" title="暂停">Ⅱ</button>
@@ -72,8 +72,9 @@
       <span>车体 <b id="hud-hull-bearing">000°</b></span>
       <span>炮塔 <b id="hud-turret-bearing">000°</b></span>
       <span>相对 <b id="hud-relative">0°</b></span>
+      <span>运动 <b id="hud-motion">静止</b></span>
       <span>视野 <b id="hud-zoom">1×</b></span>
-      <span class="bearing-note">移动鼠标或右摇杆环视</span>
+      <span class="bearing-note">移动鼠标或右摇杆环视 · 左上战术雷达掌握合围</span>
     </div>
 
     <div id="rotate-hint" class="rotate-hint">
@@ -86,7 +87,7 @@
       <div class="corner corner-tr"></div>
       <div class="corner corner-bl"></div>
       <div class="corner corner-br"></div>
-      <canvas id="game" class="stage" width="1280" height="720" aria-label="坦克对战游戏画面"></canvas>
+      <canvas id="game" class="stage" width="1280" height="720" aria-label="第一人称坦克战场，含左上战术雷达"></canvas>
       <button id="mobile-fire" class="mobile-fire hidden" type="button">开火</button>
       <button id="mobile-aim" class="mobile-aim hidden" type="button" aria-pressed="false">瞄准</button>
 
@@ -94,7 +95,7 @@
         <div class="menu-panel">
           <div class="menu-kicker">99A TURRET VIEW · TEN-FRONT ENCIRCLEMENT</div>
           <h1>坦克对战<span>十面合围</span></h1>
-          <p class="menu-lead">你位于合围中心。以 99A 炮塔第一人称视角连续环视 360°，面对四周同时激活的 10 座虎式固定炮台；全部敌车开局在场，无增援、无波次。</p>
+          <p class="menu-lead">默认新手难度。你位于合围中心，以 99A 炮塔第一人称视角连续环视 360°，面对 700～754m 外同时激活的 10 座虎式固定炮台；敌炮错峰、散布较大，可用左右机动和掩体逐个击破。</p>
 
           <div class="versus-row">
             <div class="versus-card player-card">
@@ -106,7 +107,7 @@
             <div class="versus-card enemy-card">
               <span class="versus-tag">敌方 ×10</span>
               <strong>虎式</strong>
-              <small>北 5 · 南 5 · 固定车体 · 同时开火</small>
+              <small>北 5 · 南 5 · 固定车体 · 单发炮击</small>
             </div>
           </div>
 
@@ -117,6 +118,8 @@
                 <li><b class="front">正面</b> 减伤 35%，偶发跳弹</li>
                 <li><b class="side">侧面</b> 标准伤害</li>
                 <li><b class="rear">后部</b> 增伤 45%</li>
+                <li>主炮单发 · 每发装填 2.9 秒</li>
+                <li>新手默认：99A 装甲 180 · 虎炮基础伤害 10</li>
                 <li>10 座炮台同时存在，车体永不动</li>
                 <li>宽视野 1× · 炮长镜约 1.7×</li>
               </ul>
@@ -125,7 +128,7 @@
               <h2>操控</h2>
               <ul class="rules-compact controls-list">
                 <li><kbd>W/S</kbd> 前进 / 倒车　<kbd>A/D</kbd> 车体转向</li>
-                <li><kbd>鼠标</kbd> 360° 环视　<kbd>右键</kbd> 1.7× 炮长镜　<kbd>左键</kbd> 开火</li>
+                <li><kbd>鼠标</kbd> 360° 环视　<kbd>右键</kbd> 1.7× 炮长镜　<kbd>左键</kbd> 单发开火</li>
                 <li><kbd>手机</kbd> 左摇杆驾驶，右摇杆环视，独立开火/瞄准键</li>
                 <li><kbd>Esc</kbd> 暂停</li>
               </ul>
@@ -208,8 +211,9 @@
         <div>
           <h2>打赢钢铁代差</h2>
           <ul>
-            <li>这是炮塔/车长第一人称视角；宽视野为 1×，按住鼠标右键或切换手机“瞄准”可进入约 1.7× 炮长镜，开镜时仍可环视、移动和开火。</li>
-            <li>敌方车体生成后不会移动或转向，只有炮塔按有限速度追踪；10 座炮台从开局起全部独立装填和射击。</li>
+            <li>主炮为单发制：点按一次只发射一发，按住不会连发；99A 每发装填约 2.9 秒，开镜时仍可环视、移动和单发开火。</li>
+            <li>敌方车体生成后不会移动或转向，只有炮塔按有限速度追踪；10 座虎式从 700～754m 外独立装填，每次只打一发炮弹。</li>
+            <li>左上战术雷达始终以炮塔朝向为上方，显示玩家车体/炮塔方向、四面敌军和主要掩体；敌军炮口闪光时雷达标记同步亮起。</li>
             <li>木障与沙袋可被炮弹摧毁；混凝土永久阻挡。击毁坦克留下的残骸会成为新掩体。</li>
             <li>固定炮台不检查视线，只判断炮塔对准和射程；炮弹会真实撞上混凝土、沙袋、木障、敌车与残骸，因此掩体只能提供临时保护。</li>
           </ul>
@@ -250,9 +254,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=8"></script>
-  <script src="sync.js?v=8"></script>
-  <script src="game.js?v=8"></script>
+  <script src="data.js?v=9"></script>
+  <script src="sync.js?v=9"></script>
+  <script src="game.js?v=9"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {

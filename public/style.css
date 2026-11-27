@@ -277,6 +277,15 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+#hud-motion {
+  color: #9aa58f;
+  transition: color .16s ease;
+}
+
+#hud-motion.moving {
+  color: var(--acid);
+}
+
 .bearing-note {
   margin-left: auto;
   color: #778170;
