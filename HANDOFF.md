@@ -1,7 +1,7 @@
 # 坦克对战：钢铁代差 交接
 
-- last_updated: 2026-11-28 00:27
-- status: active（v0.5.1 本地回归通过，待国内同步）
+- last_updated: 2026-11-28 00:50
+- status: active（v0.5.1 国内已上线并完成线上 E2E，待用户试玩）
 - version: v0.5.1
 
 ## 任务目标
@@ -156,9 +156,9 @@
 
 ## 国内部署
 
-- 最新部署验证：2026-11-28 00:27（Asia/Shanghai）
+- 最新部署验证：2026-11-28 00:50（Asia/Shanghai）
 - 初次目录上线：2026-11-27 19:57
-- 最新部署提交：`5aa88c5`（`v0.5.0`）
+- 最新部署提交：`c221d41`（`v0.5.1`）
 - Webroot：`/opt/tank-pwa/public/`
 - Caddy 路由：根域 `/tank` → 308 `/tank/`；`/tank/*` → `/opt/tank-pwa/public`
 - Caddy 备份：`/etc/caddy/Caddyfile.bak-tank-20261127-195549`
@@ -166,23 +166,24 @@
 - 新配置 SHA-256：`0b57c638cd5a46ffe18059161ab750c9349d294e80418078462924d669fa75f8`
 - 候选配置和安装后配置均通过 `caddy validate`，reload 后服务 `active`
 - `/api/health`、`/portal.js`、`/picks/` 仍返回原主站服务响应；DNS、首页入口、海外均未改
-- 线上 `/tank/`、`style.css?v=12`、`data.js?v=12`、`game.js?v=12`、manifest、SW、34 个运行素材与 2 个音频采样全部返回 200
+- 线上 `/tank/`、`style.css?v=13`、`data.js?v=13`、`game.js?v=13`、manifest、SW、34 个运行素材与 4 个音频采样全部返回 200
 - HTML 为 `text/html; charset=utf-8` / `Cache-Control: no-cache`；SW 为 `no-cache` 并返回 `Service-Worker-Allowed: /tank/`
-- 真实 Chromium 线上 E2E：三关配置 `5/6`、`8/19`、`10/37`，重新开始本关、下一关推进、起火、残骸留场、掩体耐久、3.2× 炮长镜、1500m 超距限制、战术雷达均通过
-- 线上移动：PC 前进速度 `190`、HUD“前进 100%”、位移约 `125.58`；`S` 倒车 620ms 反向移动约 `46.87`；手机 HUD“前进 87%”、位移约 `65.73`
+- 真实 Chromium 线上 E2E：三关配置 `5/6`、`8/19`、`10/37`，重新开始本关、下一关推进、起火、残骸标牌/烟柱、掩体耐久、3.2× 炮长镜、1500m 超距限制、战术雷达均通过
+- 线上投影：鼠标纵向移动前后 `pitch=0`、yaw 无变化；炮弹在 `220m/620m/1120m` 的屏幕 Y 全为 `360`，最大差值 `0px`
+- 线上移动：PC 前进速度 `190`、HUD“前进 100%”、位移约 `130.15`；`S` 倒车 620ms 反向移动约 `46.87`；手机 HUD“前进 84%”、位移约 `61.85`
 - 线上 Q/E：620ms 内横移约 `42.39`，横移速度 `92`，HUD“右移 100%”
-- 线上音频：AudioContext 为 `running`、炮声与发动机采样加载成功、`sampleErrors=0`；发动机采样增益从怠速 `0.014` 上升到加速 `0.091`，21 次主炮射击全部使用采样
-- 线上实弹清场：第 1 关 `5/5`、7 发、剩余装甲 180；第 3 关 `10/10`、20 发、剩余装甲 180
+- 线上音频：AudioContext 为 `running`，炮声、发动机、装甲命中与爆炸四类采样全部加载、`sampleErrors=0`；发动机采样增益从怠速 `0.014` 上升到加速 `0.094`，21 次主炮射击全部使用采样
+- 线上实弹清场：第 1 关 `5/5`、7 发、剩余装甲 180；第 3 关 `10/10`、20 发、剩余装甲 155
 - portal：登录/注册胶囊显示游客剩 9 分；`/api/time?app=tank` 与 heartbeat 均 200
 - 未登录云接口返回预期 JSON 401（`{"error":"未登录"}`），没有静态资源 4xx/5xx，也没有未捕获脚本异常
-- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v12`、37 个 `/assets/` 缓存项，炮塔图和 2 个音频采样已缓存；断网重载进入菜单且 canvas/炮塔图可用
+- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v13`、39 个 `/assets/` 缓存项，炮塔图和 4 个音频采样已缓存；断网重载进入菜单且 canvas/炮塔图可用
 - 线上截图：`_temp-screenshots/2026-11/坦克对战/线上-PC端-*.png`、`线上-手机横屏-*.png`、`线上-手机竖屏-*.png`、`线上-第1关-*.png`、`线上-第3关-*.png`
 
 ## 版本
 
-- App：`v0.5.0`
-- SW：`dbtank-static-v12`
-- 静态资源：统一 `?v=12`
+- App：`v0.5.1`
+- SW：`dbtank-static-v13`
+- 静态资源：统一 `?v=13`
 
 ## 待办
 
