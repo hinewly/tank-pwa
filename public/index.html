@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <script>
+    window.DB_HOME = location.hostname.indexOf("daobox.net.cn") !== -1
+      ? "https://daobox.net.cn"
+      : "https://daobox.app";
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>坦克对战：钢铁代差 - 99A 俯视坦克战 | 道盒 DaoBox</title>
+  <meta name="description" content="DaoBox 坦克对战：钢铁代差，驾驶 99A 主战坦克对抗虎式重型坦克。正面装甲、侧后弱点、限速炮塔、可摧毁掩体与双摇杆操控。免费在线玩，注册后每日时长翻倍，会员不限时。">
+  <meta name="keywords" content="坦克对战,钢铁代差,99A,虎式坦克,坦克游戏,Canvas游戏,手机坦克游戏,在线坦克游戏">
+  <meta property="og:title" content="坦克对战：钢铁代差">
+  <meta property="og:description" content="驾驶 99A 对抗 10 辆虎式，利用装甲、炮塔与动态掩体赢下钢铁代差。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://daobox.net.cn/tank/">
+  <link rel="canonical" href="https://daobox.net.cn/tank/">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#182015">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🛡</span>
+        <span class="brand-name">坦克对战</span>
+        <span class="brand-sub">钢铁代差</span>
+      </div>
+      <div class="topbar-tools">
+        <span class="version-badge" id="app-version">v0.1.0</span>
+        <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
+        <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
+        <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
+          <span class="refresh-icon">↻</span><span class="refresh-text">更新</span>
+        </button>
+      </div>
+      <div class="topbar-slot" id="db-account-slot"></div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="hud" aria-label="战斗状态">
+      <div class="hud-item hud-health">
+        <div class="hud-label"><span>装甲完整度</span><strong id="hud-hp-text">100 / 100</strong></div>
+        <div class="bar"><span id="hud-hp-bar"></span></div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">剩余敌军</div>
+        <div class="hud-value"><strong id="hud-enemies">10</strong><span>辆</span></div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">战绩</div>
+        <div class="hud-value"><strong id="hud-score">0</strong></div>
+      </div>
+      <div class="hud-item">
+        <div class="hud-label">连击</div>
+        <div class="hud-value accent"><strong id="hud-combo">—</strong></div>
+      </div>
+      <div class="hud-item hud-ammo">
+        <div class="hud-label"><span>炮塔 <i id="hud-turret">▲</i></span><strong id="hud-ammo">5 / 5</strong></div>
+        <div class="bar reload"><span id="hud-reload-bar"></span></div>
+      </div>
+      <button class="pause-btn" id="btn-pause" type="button" title="暂停">Ⅱ</button>
+    </section>
+
+    <div id="rotate-hint" class="rotate-hint">
+      <span>↻ 横屏体验更佳：左摇杆移动，右摇杆瞄准开火</span>
+      <button id="rotate-hint-close" type="button" aria-label="关闭提示">✕</button>
+    </div>
+
+    <section class="stage-shell">
+      <div class="corner corner-tl"></div>
+      <div class="corner corner-tr"></div>
+      <div class="corner corner-bl"></div>
+      <div class="corner corner-br"></div>
+      <canvas id="game" class="stage" width="1280" height="720" aria-label="坦克对战游戏画面"></canvas>
+
+      <div id="menu" class="overlay menu-overlay">
+        <div class="menu-panel">
+          <div class="menu-kicker">DAOBOX ARMORED DIVISION</div>
+          <h1>坦克对战<span>钢铁代差</span></h1>
+          <p class="menu-lead">驾驶中方 99A，在开阔草地击破 10 辆虎式重型坦克。正面能扛、侧后致命，掩体会被炮弹撕开。</p>
+
+          <div class="versus-row">
+            <div class="versus-card player-card">
+              <span class="versus-tag">我方</span>
+              <strong>99A</strong>
+              <small>机动 · 复合装甲 · 限速炮塔</small>
+            </div>
+            <div class="versus-mark">VS</div>
+            <div class="versus-card enemy-card">
+              <span class="versus-tag">敌方 ×10</span>
+              <strong>虎式</strong>
+              <small>重甲 · 正面推进 · 侧翼包抄</small>
+            </div>
+          </div>
+
+          <div class="menu-grid">
+            <div>
+              <h2>装甲规则</h2>
+              <ul class="rules-compact">
+                <li><b class="front">正面</b> 减伤 35%，偶发跳弹</li>
+                <li><b class="side">侧面</b> 标准伤害</li>
+                <li><b class="rear">后部</b> 增伤 45%</li>
+                <li>炮塔限速，车体转向决定生死角度</li>
+              </ul>
+            </div>
+            <div>
+              <h2>操控</h2>
+              <ul class="rules-compact controls-list">
+                <li><kbd>W/S</kbd> 前进 / 倒车　<kbd>A/D</kbd> 车体转向</li>
+                <li><kbd>鼠标</kbd> 瞄准　<kbd>左键</kbd> 开火　<kbd>R</kbd> 装填</li>
+                <li><kbd>手机</kbd> 左摇杆移动，右摇杆瞄准并开火</li>
+                <li><kbd>Esc</kbd> 暂停</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="menu-actions">
+            <button id="btn-start" class="primary-btn" type="button">
+              <span>开始战斗</span>
+              <small>单局约 3～6 分钟</small>
+            </button>
+            <div class="menu-record">
+              <div><span>最佳战绩</span><strong id="menu-best">0</strong></div>
+              <div><span>累计击毁</span><strong id="menu-kills">0</strong></div>
+              <div><span>胜利次数</span><strong id="menu-wins">0</strong></div>
+            </div>
+          </div>
+          <div class="sync-line"><span class="sync-dot"></span><span id="sync-status">本机存档 · 登录后云同步</span></div>
+        </div>
+      </div>
+
+      <div id="pause-modal" class="overlay hidden">
+        <div class="modal-panel compact-panel">
+          <div class="modal-eyebrow">TACTICAL HOLD</div>
+          <h2>⏸ 战斗暂停</h2>
+          <p id="pause-info">战场已冻结，装填和敌军都会暂停。</p>
+          <div class="modal-actions">
+            <button id="btn-resume" class="primary-btn" type="button">继续战斗</button>
+            <button id="btn-pause-menu" class="secondary-btn" type="button">返回主菜单</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="result-modal" class="overlay hidden">
+        <div class="modal-panel result-panel">
+          <div id="result-badge" class="result-badge">胜利</div>
+          <h2 id="result-title">战场肃清</h2>
+          <div id="result-body"></div>
+          <div class="modal-actions">
+            <button id="btn-retry" class="primary-btn" type="button">再战一局</button>
+            <button id="btn-result-menu" class="secondary-btn" type="button">返回主菜单</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="time-lock" class="overlay hidden">
+        <div class="modal-panel compact-panel">
+          <div class="modal-eyebrow">DAILY LIMIT</div>
+          <h2>今日娱乐时长已用完</h2>
+          <p>游客每天 10 分钟、注册用户 20 分钟；会员不限时。儿童模式按家长设置的游戏时长池计算。</p>
+          <div class="modal-actions">
+            <a id="lock-login" class="primary-btn" href="#">注册 / 登录</a>
+            <button id="btn-lock-close" class="secondary-btn" type="button">知道了</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <details class="tips">
+      <summary>战场简报与玩法说明</summary>
+      <div class="tips-grid">
+        <div>
+          <h2>打赢钢铁代差</h2>
+          <ul>
+            <li>车体正面装甲最可靠，但炮弹从后方命中会造成显著增伤。</li>
+            <li>炮塔不能瞬间转向。先规划车体朝向，再让炮塔完成最后几度修正。</li>
+            <li>木障与沙袋可被炮弹摧毁；混凝土永久阻挡。击毁坦克留下的残骸会成为新掩体。</li>
+            <li>敌军会在有视线时保持距离射击，无视线时推进；连续击毁能提高单局战绩。</li>
+          </ul>
+        </div>
+        <div>
+          <h2>家族能力</h2>
+          <ul>
+            <li>游客 10 分钟/天、注册免费用户 20 分钟/天、有效会员不限时，全家族共享。</li>
+            <li>登录后战绩自动云同步，新设备会先合并云端再继续；离线战绩联网后补传。</li>
+            <li>儿童模式使用家长设置的游戏时长池；到点自动停战。</li>
+            <li>支持安装到桌面并离线启动；版本与缓存按 `/tank/` 路径隔离。</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <footer class="footer">
+    <a id="home-link" href="javascript:void(0)">← 返回 DaoBox 工具箱</a>
+    <span class="dot">·</span>
+    <span id="contact-email"></span>
+  </footer>
+  <p class="disclaimer">本游戏为原创俯视坦克竞技娱乐项目，不含真实货币交易、赌博或血腥内容；装甲与损伤均为游戏化数值。</p>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const user = "support";
+      const domain = "daobox.net.cn";
+      const target = document.getElementById("contact-email");
+      if (target) {
+        target.innerHTML = '<a href="mailto:' + user + "@" + domain + '">' + user + "@" + domain + "</a>";
+      }
+      const home = document.getElementById("home-link");
+      if (home) home.href = window.DB_HOME + "?src=tank";
+      const login = document.getElementById("lock-login");
+      if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
+    })();
+  </script>
+  <script src="data.js?v=1"></script>
+  <script src="sync.js?v=1"></script>
+  <script src="game.js?v=1"></script>
+  <script>
+    // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
+    document.addEventListener("DOMContentLoaded", () => {
+      const portal = document.createElement("script");
+      portal.src = window.DB_HOME + "/portal.js";
+      portal.dataset.app = "tank";
+      portal.async = true;
+      portal.addEventListener("error", () => {});
+      document.body.appendChild(portal);
+    });
+  </script>
+</body>
+</html>
+
