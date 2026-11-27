@@ -148,11 +148,13 @@ async function run() {
       const front = window.__tankTest.armorProfile(tank, 0);
       const rear = window.__tankTest.armorProfile(tank, Math.PI);
       window.__tankTest.destroyFirstObstacle();
-      const obstacleAfter = window.__tankTest.getSnapshot().obstacles.find((item) => item.type === "wood");
+      const obstacles = window.__tankTest.getSnapshot().obstacles;
+      const obstacleAfter = obstacles.find((item) => item.type === "wood");
       return {
         front: front.multiplier,
         rear: rear.multiplier,
-        coverDestroyed: obstacleAfter.destroyed
+        coverDestroyed: obstacleAfter.destroyed,
+        coverTypes: [...new Set(obstacles.map((item) => item.type))]
       };
     });
 
@@ -175,7 +177,7 @@ async function run() {
     const projectionBefore = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
     await desktop.evaluate((target) => {
       window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.setPlayerPosition(target.player.x, target.player.y - 400);
+      window.__tankTest.setPlayerPosition(target.x, Math.max(36, target.y - 110));
       window.__tankTest.aimAt(target.x, target.y);
     }, projectionTarget);
     const projectionAfter = await desktop.evaluate((id) => window.__tankTest.projectEnemy(id), projectionTarget.id);
@@ -485,6 +487,7 @@ async function run() {
     report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
+    ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
     ring.total === 10 &&
     ring.seen === 10 &&
     projection.closerScaleGrew &&

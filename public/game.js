@@ -8,7 +8,7 @@
   const TANK_TYPES = D.TANKS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.2.0";
+  const APP_VERSION = "v0.2.1";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -19,6 +19,20 @@
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   const MOUSE_SENSITIVITY = 0.00225;
   const STICK_LOOK_SPEED = 2.35;
+  const OBSTACLE_WIDTH_FACTOR = {
+    concrete: 0.72,
+    wood: 0.78,
+    sandbag: 0.82,
+    earth: 0.84,
+    wreck: 0.76
+  };
+  const OBSTACLE_HEIGHT_FACTOR = {
+    concrete: 0.52,
+    wood: 0.92,
+    sandbag: 0.88,
+    earth: 0.82,
+    wreck: 0.92
+  };
 
   let canvas = null;
   let ctx = null;
@@ -950,65 +964,343 @@
     }
   };
 
+  const obstaclePattern = (obstacle, salt) => {
+    let value = ((obstacle.id || 0) * 1103515245 + (salt || 0) * 12345) >>> 0;
+    return () => {
+      value = (value * 1664525 + 1013904223) >>> 0;
+      return value / 4294967296;
+    };
+  };
+
+  const drawConcreteBarrier = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 11);
+    const segments = width > 190 ? 3 : width > 95 ? 2 : 1;
+    const segmentWidth = width / segments;
+    for (let i = 0; i < segments; i += 1) {
+      const left = x + i * segmentWidth + segmentWidth * 0.04;
+      const right = x + (i + 1) * segmentWidth - segmentWidth * 0.04;
+      const top = y + height * (0.22 + (i % 2) * 0.04);
+      const base = projectionGround(obstacle, 0);
+      ctx.fillStyle = "#777a73";
+      ctx.beginPath();
+      ctx.moveTo(left + segmentWidth * 0.16, top);
+      ctx.lineTo(right - segmentWidth * 0.16, top);
+      ctx.lineTo(right, base);
+      ctx.lineTo(left, base);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#b7b6aa";
+      ctx.lineWidth = Math.max(1, 1.5 * scale);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(224,222,207,.58)";
+      ctx.beginPath();
+      ctx.moveTo(left + segmentWidth * 0.16, top);
+      ctx.lineTo(right - segmentWidth * 0.16, top);
+      ctx.lineTo(right - segmentWidth * 0.23, y);
+      ctx.lineTo(left + segmentWidth * 0.23, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#585b56";
+      ctx.lineWidth = Math.max(1, scale);
+      ctx.beginPath();
+      ctx.moveTo(left + segmentWidth * 0.16, top);
+      ctx.lineTo(left + segmentWidth * 0.23, y);
+      ctx.moveTo(right - segmentWidth * 0.16, top);
+      ctx.lineTo(right - segmentWidth * 0.23, y);
+      ctx.stroke();
+
+      const stripeY = base - height * 0.24;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left + 2, stripeY, Math.max(4, right - left - 4), Math.max(3, height * 0.12));
+      ctx.clip();
+      ctx.fillStyle = "#d7b84f";
+      ctx.fillRect(left, stripeY, right - left, Math.max(3, height * 0.12));
+      ctx.strokeStyle = "#3c3b32";
+      ctx.lineWidth = Math.max(2, 4 * scale);
+      for (let sx = left - 20; sx < right + 20; sx += Math.max(10, 20 * scale)) {
+        ctx.beginPath();
+        ctx.moveTo(sx, stripeY + height * 0.13);
+        ctx.lineTo(sx + height * 0.13, stripeY);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.strokeStyle = "#4f524d";
+      ctx.lineWidth = Math.max(1, 1.5 * scale);
+      ctx.beginPath();
+      ctx.moveTo(left + segmentWidth * 0.52, top + height * 0.1);
+      ctx.lineTo(left + segmentWidth * 0.42, top + height * 0.34);
+      ctx.lineTo(left + segmentWidth * 0.56, top + height * 0.52);
+      if (rand() > 0.45) {
+        ctx.moveTo(right - segmentWidth * 0.3, top + height * 0.18);
+        ctx.lineTo(right - segmentWidth * 0.38, top + height * 0.42);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(76,72,61,.85)";
+      ctx.lineWidth = Math.max(1, 1.2 * scale);
+      ctx.beginPath();
+      ctx.moveTo(left + segmentWidth * 0.25, y);
+      ctx.lineTo(left + segmentWidth * 0.18, y - 7 * scale);
+      ctx.moveTo(right - segmentWidth * 0.22, y);
+      ctx.lineTo(right - segmentWidth * 0.15, y - 7 * scale);
+      ctx.stroke();
+    }
+  };
+
+  const drawSandbagWall = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 23);
+    const bagHeight = clamp(21 * scale, 10, 36);
+    const bagWidth = clamp(bagHeight * 1.7, 20, 62);
+    const rows = Math.max(1, Math.ceil(height / bagHeight));
+    const cols = Math.max(2, Math.ceil(width / bagWidth));
+    const damage = obstacle.maxHp ? 1 - clamp(obstacle.hp / obstacle.maxHp, 0, 1) : 0;
+    ctx.save();
+    for (let row = rows - 1; row >= 0; row -= 1) {
+      const offset = row % 2 === 0 ? -bagWidth * 0.18 : bagWidth * 0.18;
+      for (let col = -1; col <= cols; col += 1) {
+        if (damage > 0.18 && rand() < damage * 0.48) continue;
+        const bx = x + col * bagWidth + offset;
+        const by = y + row * bagHeight;
+        if (bx > x + width || bx + bagWidth < x) continue;
+        const gradient = ctx.createLinearGradient(0, by, 0, by + bagHeight);
+        gradient.addColorStop(0, "#c5a86a");
+        gradient.addColorStop(0.35, "#a98a4f");
+        gradient.addColorStop(1, "#735d36");
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(bx + bagWidth * 0.48, by + bagHeight * 0.5, bagWidth * 0.5, bagHeight * 0.52, 0, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(83,61,31,.78)";
+        ctx.lineWidth = Math.max(1, 1.1 * scale);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(241,220,164,.5)";
+        ctx.beginPath();
+        ctx.arc(bx + bagWidth * 0.48, by + bagHeight * 0.35, bagWidth * 0.32, Math.PI * 1.08, Math.PI * 1.82);
+        ctx.stroke();
+        ctx.strokeStyle = "#6f5530";
+        ctx.beginPath();
+        ctx.moveTo(bx + bagWidth * 0.46, by + bagHeight * 0.16);
+        ctx.lineTo(bx + bagWidth * 0.52, by + bagHeight * 0.78);
+        ctx.stroke();
+        ctx.fillStyle = "#5c4728";
+        ctx.beginPath();
+        ctx.arc(bx + bagWidth * 0.25, by + bagHeight * 0.43, Math.max(1, scale), 0, TAU);
+        ctx.arc(bx + bagWidth * 0.7, by + bagHeight * 0.43, Math.max(1, scale), 0, TAU);
+        ctx.fill();
+      }
+    }
+    if (damage > 0.45) {
+      ctx.fillStyle = "rgba(20,23,16,.56)";
+      ctx.beginPath();
+      ctx.ellipse(x + width * 0.62, y + height * 0.52, width * 0.1, height * 0.18, 0.2, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  };
+
+  const drawWoodBarricade = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 37);
+    const damage = obstacle.maxHp ? 1 - clamp(obstacle.hp / obstacle.maxHp, 0, 1) : 0;
+    const logs = width > height * 1.45 ? 3 : 2;
+    const logHeight = height / logs;
+    for (let row = 0; row < logs; row += 1) {
+      const ly = y + row * logHeight + 1;
+      const gradient = ctx.createLinearGradient(0, ly, 0, ly + logHeight);
+      gradient.addColorStop(0, "#b07a43");
+      gradient.addColorStop(0.4, "#8b582e");
+      gradient.addColorStop(1, "#56351c");
+      ctx.fillStyle = gradient;
+      roundedRect(x + 3, ly, width - 6, Math.max(5, logHeight - 3), logHeight * 0.34);
+      ctx.fill();
+      ctx.strokeStyle = "#4f2e17";
+      ctx.lineWidth = Math.max(1, 1.2 * scale);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(232,184,116,.46)";
+      ctx.lineWidth = Math.max(1, 1.4 * scale);
+      for (let grain = 0; grain < 3; grain += 1) {
+        const gy = ly + logHeight * (0.28 + grain * 0.2);
+        ctx.beginPath();
+        ctx.moveTo(x + width * 0.08, gy);
+        ctx.bezierCurveTo(
+          x + width * (0.35 + rand() * 0.1),
+          gy - logHeight * 0.08,
+          x + width * (0.62 + rand() * 0.08),
+          gy + logHeight * 0.08,
+          x + width * 0.92,
+          gy
+        );
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#c08a52";
+      ctx.beginPath();
+      ctx.ellipse(x + 5, ly + logHeight * 0.46, Math.max(3, 5 * scale), Math.max(2, logHeight * 0.23), 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "#6a4122";
+      ctx.beginPath();
+      ctx.ellipse(x + 5, ly + logHeight * 0.46, Math.max(1.5, 2.8 * scale), Math.max(1, logHeight * 0.12), 0, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#5d351b";
+    ctx.lineWidth = Math.max(2, 4 * scale);
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.14, y + height * 0.05);
+    ctx.lineTo(x + width * 0.83, y + height * 0.92);
+    ctx.moveTo(x + width * 0.86, y + height * 0.08);
+    ctx.lineTo(x + width * 0.18, y + height * 0.9);
+    ctx.stroke();
+    if (damage > 0.35) {
+      ctx.fillStyle = "rgba(27,20,12,.64)";
+      ctx.beginPath();
+      ctx.ellipse(x + width * 0.67, y + height * 0.52, width * 0.09, height * 0.18, -0.3, 0, TAU);
+      ctx.fill();
+    }
+  };
+
+  const drawEarthMound = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 53);
+    const damage = obstacle.maxHp ? 1 - clamp(obstacle.hp / obstacle.maxHp, 0, 1) : 0;
+    const peakDrop = damage > 0.55 ? height * 0.18 : 0;
+    const gradient = ctx.createLinearGradient(0, y, 0, y + height);
+    gradient.addColorStop(0, "#b38b55");
+    gradient.addColorStop(0.35, "#8c683d");
+    gradient.addColorStop(1, "#563b23");
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(x, y + height);
+    ctx.lineTo(x + width * 0.08, y + height * 0.62);
+    ctx.bezierCurveTo(
+      x + width * 0.24,
+      y + height * 0.16 + peakDrop,
+      x + width * 0.44,
+      y + height * 0.04 + peakDrop,
+      x + width * 0.58,
+      y + height * 0.22 + peakDrop
+    );
+    ctx.bezierCurveTo(
+      x + width * 0.78,
+      y + height * 0.12,
+      x + width * 0.93,
+      y + height * 0.55,
+      x + width,
+      y + height
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#c0a168", ctx.lineWidth = Math.max(1, 1.2 * scale);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(238,210,145,.44)";
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.14, y + height * 0.7);
+    ctx.bezierCurveTo(x + width * 0.4, y + height * 0.45, x + width * 0.66, y + height * 0.45, x + width * 0.9, y + height * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = "#5e7135";
+    for (let i = 0; i < 14; i += 1) {
+      const gx = x + width * (0.08 + rand() * 0.84);
+      const gy = y + height * (0.16 + rand() * 0.24);
+      ctx.beginPath();
+      ctx.moveTo(gx, gy + 4 * scale);
+      ctx.lineTo(gx - 2 * scale, gy - 5 * scale);
+      ctx.lineTo(gx + 2 * scale, gy - 4 * scale);
+      ctx.fill();
+    }
+    for (let i = 0; i < 18; i += 1) {
+      const px = x + width * (0.12 + rand() * 0.76);
+      const py = y + height * (0.42 + rand() * 0.48);
+      ctx.fillStyle = rand() > 0.5 ? "#d0a769" : "#45311f";
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(1, scale * (0.8 + rand() * 1.4)), 0, TAU);
+      ctx.fill();
+    }
+  };
+
+  const drawWreck = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 71);
+    ctx.fillStyle = "rgba(12,14,11,.44)";
+    ctx.beginPath();
+    ctx.ellipse(x + width * 0.5, y + height * 0.96, width * 0.54, height * 0.12, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = "#1f211d";
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.16, y + height * 0.42);
+    ctx.lineTo(x + width * 0.31, y + height * 0.2);
+    ctx.lineTo(x + width * 0.73, y + height * 0.22);
+    ctx.lineTo(x + width * 0.9, y + height * 0.5);
+    ctx.lineTo(x + width * 0.74, y + height * 0.78);
+    ctx.lineTo(x + width * 0.22, y + height * 0.76);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#5d4d37";
+    ctx.lineWidth = Math.max(1, 2 * scale);
+    ctx.stroke();
+    ctx.strokeStyle = "#080a08";
+    ctx.lineWidth = Math.max(4, 9 * scale);
+    ctx.beginPath();
+    ctx.moveTo(x, y + height * 0.72);
+    ctx.lineTo(x + width * 0.2, y + height * 0.56);
+    ctx.moveTo(x + width * 0.8, y + height * 0.58);
+    ctx.lineTo(x + width, y + height * 0.78);
+    ctx.stroke();
+    ctx.strokeStyle = "#4a3d2e";
+    ctx.lineWidth = Math.max(2, 5 * scale);
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.21, y + height * 0.63);
+    ctx.lineTo(x + width * 0.77, y + height * 0.37);
+    ctx.stroke();
+    ctx.fillStyle = "#31140e";
+    ctx.beginPath();
+    ctx.arc(x + width * 0.64, y + height * 0.39, Math.max(2, 5 * scale), 0, TAU);
+    ctx.fill();
+    for (let i = 0; i < 12; i += 1) {
+      ctx.fillStyle = "#71533b";
+      ctx.beginPath();
+      ctx.arc(x + width * (0.13 + rand() * 0.74), y + height * (0.42 + rand() * 0.46), Math.max(1, scale), 0, TAU);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "rgba(110,118,107,.24)";
+    ctx.lineWidth = Math.max(2, 7 * scale);
+    ctx.beginPath();
+    ctx.moveTo(x + width * 0.58, y + height * 0.28);
+    ctx.bezierCurveTo(x + width * 0.65, y - height * 0.1, x + width * 0.7, y + height * 0.08, x + width * 0.74, y - height * 0.18);
+    ctx.stroke();
+  };
+
+  const projectionGround = (obstacle, offset) => {
+    const p = projectWorld(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2, offset);
+    return p ? p.groundY : VIEW_H;
+  };
+
   const drawObstacle = (obstacle, projection) => {
     const meta = D.OBSTACLE_TYPES[obstacle.type];
-    const width = clamp(Math.max(obstacle.w, obstacle.h) * projection.scale, 12, VIEW_W * 1.4);
-    const height = clamp(meta.height * projection.scale, 8, VIEW_H * 1.6);
+    const widthFactor = OBSTACLE_WIDTH_FACTOR[obstacle.type] || 0.78;
+    const heightFactor = OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9;
+    const width = clamp(Math.max(obstacle.w, obstacle.h) * projection.scale * widthFactor, 12, 340);
+    const height = clamp(meta.height * projection.scale * heightFactor, 8, 300);
     const x = projection.x - width / 2;
     const y = projection.groundY - height;
     ctx.save();
-    ctx.shadowColor = "rgba(10,15,9,.35)";
-    ctx.shadowBlur = 10 * projection.scale;
-    ctx.fillStyle = obstacle.hitFlash > 0 ? "#efe5b3" : meta.fill;
-    roundedRect(x, y, width, height, obstacle.type === "sandbag" ? 6 : 3);
+    ctx.shadowColor = "rgba(10,15,9,.32)";
+    ctx.shadowBlur = Math.min(18, 8 * projection.scale);
+    ctx.shadowOffsetY = Math.min(8, 3 * projection.scale);
+    ctx.fillStyle = "rgba(12,17,10,.26)";
+    ctx.beginPath();
+    ctx.ellipse(projection.x, projection.groundY + 2, width * 0.55, Math.max(3, height * 0.07), 0, 0, TAU);
     ctx.fill();
     ctx.shadowColor = "transparent";
-    ctx.strokeStyle = meta.edge;
-    ctx.lineWidth = Math.max(1, 2 * projection.scale);
-    ctx.stroke();
-    if (obstacle.type === "wood") {
-      ctx.strokeStyle = meta.pattern;
-      ctx.lineWidth = Math.max(1, 3 * projection.scale);
-      for (let i = 1; i <= 4; i += 1) {
-        const yy = y + height * i / 5;
-        ctx.beginPath();
-        ctx.moveTo(x + 2, yy);
-        ctx.lineTo(x + width - 2, yy);
-        ctx.stroke();
-      }
-    } else if (obstacle.type === "sandbag") {
-      ctx.strokeStyle = meta.pattern;
-      ctx.lineWidth = Math.max(1, 2 * projection.scale);
-      const cols = Math.max(2, Math.floor(width / (26 * projection.scale + 8)));
-      const rows = Math.max(1, Math.floor(height / (20 * projection.scale + 6)));
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const bx = x + 3 + col * width / cols;
-          const by = y + 3 + row * height / rows;
-          roundedRect(bx, by, width / cols - 4, height / rows - 4, 5);
-          ctx.stroke();
-        }
-      }
-    } else if (obstacle.type === "concrete") {
-      ctx.strokeStyle = meta.pattern;
-      ctx.lineWidth = Math.max(1, 2 * projection.scale);
-      ctx.beginPath();
-      ctx.moveTo(x + width * 0.25, y);
-      ctx.lineTo(x + width * 0.38, y + height * 0.45);
-      ctx.lineTo(x + width * 0.3, y + height);
-      ctx.moveTo(x + width * 0.72, y);
-      ctx.lineTo(x + width * 0.62, y + height * 0.55);
-      ctx.stroke();
-    } else if (obstacle.type === "wreck") {
-      ctx.fillStyle = meta.pattern;
-      roundedRect(x + width * 0.12, y + height * 0.22, width * 0.76, height * 0.58, 8);
+    ctx.shadowOffsetY = 0;
+    if (obstacle.type === "concrete") drawConcreteBarrier(obstacle, x, y, width, height, projection.scale);
+    else if (obstacle.type === "sandbag") drawSandbagWall(obstacle, x, y, width, height, projection.scale);
+    else if (obstacle.type === "wood") drawWoodBarricade(obstacle, x, y, width, height, projection.scale);
+    else if (obstacle.type === "earth") drawEarthMound(obstacle, x, y, width, height, projection.scale);
+    else if (obstacle.type === "wreck") drawWreck(obstacle, x, y, width, height, projection.scale);
+    if (obstacle.hitFlash > 0) {
+      ctx.globalAlpha = obstacle.hitFlash * 0.34;
+      ctx.fillStyle = "#fff0b0";
+      roundedRect(x, y, width, height, 4);
       ctx.fill();
-      ctx.strokeStyle = "#76543a";
-      ctx.lineWidth = Math.max(2, 7 * projection.scale);
-      ctx.beginPath();
-      ctx.moveTo(projection.x, projection.groundY - height * 0.55);
-      ctx.lineTo(projection.x + width * 0.42, projection.groundY - height * 0.65);
-      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
     if (obstacle.hp !== null && obstacle.maxHp && obstacle.hp < obstacle.maxHp) {
       const p = clamp(obstacle.hp / obstacle.maxHp, 0, 1);
@@ -1568,7 +1860,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=4").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=5").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;

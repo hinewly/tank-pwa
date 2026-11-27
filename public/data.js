@@ -102,6 +102,8 @@ window.TankData = (() => {
     { x: 1460, y: 520, w: 120, h: 40, type: "wood" },
     { x: 620, y: 940, w: 120, h: 40, type: "wood" },
     { x: 1460, y: 940, w: 120, h: 40, type: "wood" },
+    { x: 1280, y: 400, w: 110, h: 42, type: "wood" },
+    { x: 1280, y: 1058, w: 110, h: 42, type: "wood" },
     { x: 540, y: 600, w: 40, h: 90, type: "wood" },
     { x: 1620, y: 600, w: 40, h: 90, type: "wood" },
     { x: 540, y: 810, w: 40, h: 90, type: "wood" },
@@ -117,7 +119,10 @@ window.TankData = (() => {
     { x: 500, y: 520, w: 36, h: 120, type: "sandbag" },
     { x: 1664, y: 520, w: 36, h: 120, type: "sandbag" },
     { x: 500, y: 860, w: 36, h: 120, type: "sandbag" },
-    { x: 1664, y: 860, w: 36, h: 120, type: "sandbag" }
+    { x: 1664, y: 860, w: 36, h: 120, type: "sandbag" },
+    { x: 860, y: 400, w: 100, h: 52, type: "earth" },
+    { x: 820, y: 340, w: 100, h: 52, type: "earth" },
+    { x: 860, y: 1048, w: 100, h: 52, type: "earth" }
   ];
 
   const SPAWNS = [
@@ -162,6 +167,15 @@ window.TankData = (() => {
       fill: "#9b8652",
       edge: "#c4ad72",
       pattern: "#75633a"
+    },
+    earth: {
+      label: "土堆",
+      hp: 108,
+      destructible: true,
+      height: 38,
+      fill: "#806039",
+      edge: "#b18b52",
+      pattern: "#5a4126"
     },
     wreck: {
       label: "坦克残骸",
