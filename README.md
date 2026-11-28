@@ -11,7 +11,7 @@ DaoBox 正式娱乐子程序。首版采用 99A 炮塔/车长第一人称视角�
 - PWA scope：`/tank/`
 - Service Worker 缓存前缀：`dbtank-`
 
-国内版已通过 Caddy 静态目录上线。根域仅新增 `/tank` 与 `/tank/*` 路由，不占主站 API、`portal.js` 或 `/picks/*`；未改 DNS，未加首页入口，未部署海外。
+国内版已通过 Caddy 静态目录上线，当前线上为 `v0.5.8`。根域仅新增 `/tank` 与 `/tank/*` 路由，不占主站 API、`portal.js` 或 `/picks/*`；未改 DNS，未加首页入口，未部署海外。
 
 ## 本地运行
 
@@ -42,7 +42,7 @@ node tools/platform-check.cjs
 
 发动机使用 CC BY 3.0 重型车辆循环采样，音量、音高与低通滤波随油门、速度和转向变化；我方/敌方主炮使用 CC0 炮声采样，并与 CC BY 3.0 爆炸尾音叠加；装甲命中使用 CC0 金属撞击采样，近失掠弹和装填声使用 WebAudio 实时合成。素材来源见 `public/assets/audio/README.md`，页面底部保留授权署名。
 
-本机试听时，`public/assets/audio/local/` 可以放置用户提供的影视裁切音效，游戏会优先加载；该目录已 gitignore，公开部署时自动回退到上面已确认授权的素材。
+主炮炮击与跳弹当前使用用户于 2026-11-28 指定采用的影视裁切音效，分别对应 `tank-cannon.mp3` 和 `tank-ricochet.mp3`；源区间与处理方式见 `public/assets/audio/README.md`。尚未采用的候选音效仍放在 gitignore 的 `public/assets/audio/local/`。
 
 本作是 2.5D 全景投影，鼠标和手机右摇杆支持左右环视与约 `±7°` 俯仰。背景地平线、坦克接地和炮弹高度共用同一 pitch：抬高炮口会飞越目标，压低可打地面或低掩体，不会只移动远景导致坦克悬空。炮弹是无重力平直弹道，弹体朝向按前后两帧屏幕轨迹旋转。
 

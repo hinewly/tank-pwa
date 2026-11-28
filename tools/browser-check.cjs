@@ -9,7 +9,6 @@ const { chromium } = require(
 
 const BASE_URL = process.env.TANK_URL || "http://127.0.0.1:8810/";
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const CONTEXT_OPTIONS = process.env.TANK_DISABLE_LOCAL_AUDIO ? { serviceWorkers: "block" } : {};
 const PORTAL_SCRIPT = fs.readFileSync(
   path.resolve(__dirname, "../../daobox-home/public/portal.js"),
   "utf8"
@@ -29,10 +28,6 @@ async function attachPortalMock(page) {
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (process.env.TANK_DISABLE_LOCAL_AUDIO && url.pathname.includes("/assets/audio/local/")) {
-      await route.fulfill({ status: 404, body: "local preview audio disabled" });
-      return;
-    }
     if (url.hostname !== "daobox.app") {
       await route.continue();
       return;
@@ -94,7 +89,7 @@ async function run() {
   const shotDir = process.env.TANK_SHOT_DIR || "";
   if (shotDir) fs.mkdirSync(shotDir, { recursive: true });
   try {
-    const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 }, ...CONTEXT_OPTIONS });
+    const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await attachPortalMock(desktop);
     const desktopErrors = collectPageErrors(desktop);
     await desktop.goto(BASE_URL, { waitUntil: "domcontentloaded" });
@@ -767,8 +762,7 @@ async function run() {
       viewport: { width: 390, height: 844 },
       isMobile: true,
       hasTouch: true,
-      deviceScaleFactor: 2,
-      ...CONTEXT_OPTIONS
+      deviceScaleFactor: 2
     });
     await attachPortalMock(portrait);
     const portraitErrors = collectPageErrors(portrait);
@@ -791,8 +785,7 @@ async function run() {
       viewport: { width: 844, height: 390 },
       isMobile: true,
       hasTouch: true,
-      deviceScaleFactor: 2,
-      ...CONTEXT_OPTIONS
+      deviceScaleFactor: 2
     });
     await attachPortalMock(mobile);
     const mobileErrors = collectPageErrors(mobile);
@@ -1169,6 +1162,7 @@ async function run() {
     report.nearMissAudio.events.nearMisses > 0 &&
     report.ricochetAudio.state === "running" &&
     report.ricochetAudio.sampleErrors === 0 &&
+    report.ricochetAudio.ricochetSampleLoaded &&
     report.ricochetAudio.events.ricochets > 0 &&
     desktopStrafe.moved > 8 &&
     desktopStrafe.strafeSpeed > 20 &&

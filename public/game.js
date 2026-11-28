@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.7";
+  const APP_VERSION = "v0.5.8";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -200,26 +200,12 @@
     const sampleLoading = new Map();
     const sampleUnavailable = new Set();
     let sampleErrors = 0;
-    const useLocalAudio = location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const SOUND_FILES = {
-      cannon: [
-        "assets/audio/local/cinematic-cannon.mp3",
-        "assets/audio/tank-cannon.mp3"
-      ],
-      ricochet: [
-        "assets/audio/local/cinematic-ricochet.mp3"
-      ],
-      engine: [
-        "assets/audio/tank-engine-loop.mp3"
-      ],
-      armorHit: [
-        "assets/audio/local/cinematic-armor-hit.mp3",
-        "assets/audio/tank-armor-hit.mp3"
-      ],
-      explosion: [
-        "assets/audio/local/cinematic-explosion.mp3",
-        "assets/audio/tank-explosion.mp3"
-      ]
+      cannon: "assets/audio/tank-cannon.mp3",
+      ricochet: "assets/audio/tank-ricochet.mp3",
+      engine: "assets/audio/tank-engine-loop.mp3",
+      armorHit: "assets/audio/tank-armor-hit.mp3",
+      explosion: "assets/audio/tank-explosion.mp3"
     };
     const events = {
       playerShots: 0,
@@ -264,27 +250,20 @@
       if (sampleBuffers.has(name)) return Promise.resolve(sampleBuffers.get(name));
       if (sampleUnavailable.has(name)) return Promise.resolve(null);
       if (sampleLoading.has(name)) return sampleLoading.get(name);
-      const loadSource = (source) => fetch(source, { cache: "force-cache" })
+      const pending = fetch(SOUND_FILES[name], { cache: "force-cache" })
         .then((response) => {
           if (!response.ok) throw new Error("sample load failed");
           return response.arrayBuffer();
         })
         .then((data) => ac.decodeAudioData(data))
-        .catch(() => null);
-      const configuredSources = Array.isArray(SOUND_FILES[name]) ? SOUND_FILES[name] : [SOUND_FILES[name]];
-      const sources = configuredSources.filter((source) => useLocalAudio || source.indexOf("assets/audio/local/") === -1);
-      const pending = sources.reduce(
-        (sequence, source) => sequence.then((buffer) => buffer || loadSource(source)),
-        Promise.resolve(null)
-      )
         .then((buffer) => {
-          if (!buffer) {
-            sampleUnavailable.add(name);
-            if (configuredSources.some((source) => source.indexOf("assets/audio/local/") === -1)) sampleErrors += 1;
-            return null;
-          }
           sampleBuffers.set(name, buffer);
           return buffer;
+        })
+        .catch(() => {
+          sampleUnavailable.add(name);
+          sampleErrors += 1;
+          return null;
         })
         .finally(() => sampleLoading.delete(name));
       sampleLoading.set(name, pending);
@@ -3210,7 +3189,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=19").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=20").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;

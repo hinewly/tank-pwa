@@ -1,8 +1,8 @@
 # 坦克对战：钢铁代差 交接
 
-- last_updated: 2026-11-28 12:41
-- status: active（v0.5.7 本地完成；影视裁切音效仅本机预览，公网仍为 v0.5.6）
-- version: v0.5.7
+- last_updated: 2026-11-28 12:59
+- status: active（v0.5.8 国内已上线；等待用户试玩炮击、跳弹与新炮弹外观）
+- version: v0.5.8
 
 ## 任务目标
 
@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-本轮已完成 `v0.5.7` 本机开发：炮弹改为细长穿甲弹外观，包含钢体、铜色尖头、尾翼、亮色弹芯和曳光；从用户提供的影视混音中裁出炮击、跳弹、装甲命中与爆炸四段，本机优先播放、公开环境自动回退到已授权素材。影视素材授权未确认，已排除在 git 之外，公网仍停留 `v0.5.6`，等待用户试听并确认版权后再决定是否部署。
+本轮已完成并上线 `v0.5.8`：炮弹保持细长穿甲弹外观；用户指定的 `cinematic-cannon` 和 `cinematic-ricochet` 已成为全环境默认 `tank-cannon.mp3` / `tank-ricochet.mp3`，并纳入 SW 预缓存和页面署名。装甲命中与爆炸仍使用原有授权素材。
 
 ## 已确认基线
 
@@ -81,6 +81,8 @@
 
 ## 最近完成
 
+- `v0.5.8` 按用户确认将 `cinematic-cannon.mp3` 覆盖为正式主炮 `tank-cannon.mp3`，将 `cinematic-ricochet.mp3` 转为正式 `tank-ricochet.mp3`；两者不再依赖 localhost 优先链，所有环境默认使用。
+- `v0.5.8` SW 预缓存新增 `tank-ricochet.mp3`，页面音效署名改为“用户提供炮击与跳弹混音素材”。
 - `v0.5.7` 炮弹视觉重绘：不再使用黑铁饼/黑椭圆，改为朝向屏幕轨迹旋转的细长穿甲弹，并增加尾焰、曳光和金属受光。
 - 从用户提供的 `音频1_去人声_强力版.mp3` 中按频谱与起音特征裁出四个候选事件：炮击 `0.78–1.93s`、跳弹 `25.50–25.98s`、装甲命中 `57.12–57.57s`、爆炸 `103.10–104.55s`。
 - 四段音效已做单声道、滤波、动态压缩、首尾淡入淡出和响度校正；本机完整验收中四类采样均成功解码，`sampleErrors=0`，跳弹事件实际触发采样。
@@ -124,6 +126,7 @@
 
 ## 验证结果
 
+- `v0.5.8` 完整 `browser-check` 通过；主炮与跳弹正式文件均成功加载，跳弹事件实际触发采样，`sampleErrors=0`。
 - `v0.5.7` 完整 `browser-check` 通过；炮击、跳弹、装甲命中、爆炸四个本地样本全部加载成功，`sampleErrors=0`，显式调用跳弹后 `events.ricochets=1`。
 - 公开回退回归通过：屏蔽 `public/assets/audio/local/` 后，炮击/装甲命中/爆炸回退授权样本，跳弹回退实时合成，`sampleErrors=0`，完整战斗流程仍通过。
 - `v0.5.7` 第一关仍为 `5` 辆敌车、`6` 处障碍；真实实弹与烟雾、起火、残骸、暂停重开、下一关流程通过。
@@ -168,10 +171,10 @@
 
 ## 国内部署
 
-- 最新部署验证：2026-11-28 10:44（Asia/Shanghai）
-- 公网当前版本仍为 `v0.5.6`；`v0.5.7` 尚未部署，原因是影视裁切音效版权状态待确认。
+- 最新部署验证：2026-11-28 12:59（Asia/Shanghai）
+- 公网当前版本：`v0.5.8` / `dbtank-static-v20` / 静态资源 `?v=20`
 - 初次目录上线：2026-11-27 19:57
-- 最新部署提交：`5ac1bb4`（`v0.5.6`）
+- 最新部署提交：`4df1fce`（`v0.5.8`）
 - Webroot：`/opt/tank-pwa/public/`
 - Caddy 路由：根域 `/tank` → 308 `/tank/`；`/tank/*` → `/opt/tank-pwa/public`
 - Caddy 备份：`/etc/caddy/Caddyfile.bak-tank-20261127-195549`
@@ -179,7 +182,10 @@
 - 新配置 SHA-256：`0b57c638cd5a46ffe18059161ab750c9349d294e80418078462924d669fa75f8`
 - 候选配置和安装后配置均通过 `caddy validate`，reload 后服务 `active`
 - `/api/health`、`/portal.js`、`/picks/` 仍返回原主站服务响应；DNS、首页入口、海外均未改
-- 线上 `/tank/`、`style.css?v=18`、`data.js?v=18`、`game.js?v=18`、manifest、SW、34 个运行素材与 4 个音频采样全部返回 200
+- 线上 `/tank/`、`style.css?v=20`、`data.js?v=20`、`game.js?v=20`、manifest、SW、运行素材与 5 个音频采样全部返回 200
+- 线上 `tank-cannon.mp3` 为 `14,777 bytes`，`tank-ricochet.mp3` 为 `6,626 bytes`；两者均 `HTTP 200`、`audio/mpeg`
+- 本地与线上哈希一致：炮击 `0b801f01…c9e2e`，跳弹 `e650e9a1…023f7`，`index.html`、`game.js?v=20`、`service-worker.js?v=20` 也逐文件一致
+- 未采用的 `assets/audio/local/cinematic-cannon.mp3` 线上返回 `404`，候选目录未部署
 - HTML 为 `text/html; charset=utf-8` / `Cache-Control: no-cache`；SW 为 `no-cache` 并返回 `Service-Worker-Allowed: /tank/`
 - 真实 Chromium 线上 E2E：三关配置 `5/6`、`8/19`、`10/37`，重新开始本关、下一关推进、起火、残骸标牌/烟柱、掩体耐久、3.2× 炮长镜、1500m 超距限制、战术雷达均通过
 - 线上俯仰：`+0.08rad` 高角射线末端 `z≈133.8m`、`-0.06rad` 低角末端 `z≈-23.3m`，两种瞄准射线在三个距离采样点的屏幕 Y 全为 `360`
@@ -194,21 +200,24 @@
 - 线上实弹清场：第 1 关 `5/5`、7 发、剩余装甲 180；第 3 关 `10/10`、22 发、剩余装甲 148
 - portal：登录/注册胶囊显示游客剩 9 分；`/api/time?app=tank` 与 heartbeat 均 200
 - 未登录云接口返回预期 JSON 401（`{"error":"未登录"}`），没有静态资源 4xx/5xx，也没有未捕获脚本异常
-- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v18`、39 个 `/assets/` 缓存项，炮塔图和 4 个音频采样已缓存；断网重载进入菜单且 canvas/炮塔图可用
+- SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v20`、40 个 `/assets/` 缓存项，炮塔图、炮击和跳弹采样已缓存；断网重载进入菜单且 canvas/炮塔图可用
+- 线上 `v0.5.8` 浏览器回归通过：`cannonSampleLoaded=true`、`ricochetSampleLoaded=true`、跳弹事件已触发采样、`sampleErrors=0`；首关、第三关、PC/手机与结算流程保持通过
+- 线上公网测试为游客态，因此 401 登录/云接口断言不适用；对应登录云同步、时长锁定与空档防覆盖已在本地 `platform-check` 全部通过
+- GitHub 推送在部署后遇到 DNS 解析失败和低速中断，代码已提交到本地 `main`；网络恢复后需补推 `origin/main`
 - 线上截图：`_temp-screenshots/2026-11/坦克对战/线上-PC端-*.png`、`线上-手机横屏-*.png`、`线上-手机竖屏-*.png`、`线上-第1关-*.png`、`线上-第3关-*.png`
 
 ## 版本
 
-- App：`v0.5.7`（本机）
-- SW：`dbtank-static-v19`（本机）
-- 静态资源：统一 `?v=19`（本机）
-- 公网：`v0.5.6` / `dbtank-static-v18` / `?v=18`
+- App：`v0.5.8`
+- SW：`dbtank-static-v20`
+- 静态资源：统一 `?v=20`
+- 公网：`https://daobox.net.cn/tank/`
 
 ## 待办
 
-- [ ] 用户本机试听 `v0.5.7`：炮击、跳弹、装甲命中、爆炸四段影视裁切音效是否合适。
-- [ ] 用户确认影视音效授权；未确认前不得提交 `public/assets/audio/local/` 或部署到公网。
-- [ ] 用户试玩验收：三关节奏、W/S/A/D/Q/E 手感、炮弹新外观、真实炮声与发动机加速音量、虎式起火和残骸观感。
+- [x] 用户确认炮击与跳弹采用其提供的影视裁切音效。
+- [ ] 用户试玩验收：三关节奏、W/S/A/D/Q/E 手感、炮弹新外观、炮击/跳弹/发动机音量、虎式起火和残骸观感。
+- [x] 国内公网部署 `v0.5.8` 并完成线上浏览器/PWA 回归。
 - [ ] 真机验收：Android/iPhone 横屏双摇杆、独立开火键、安装到桌面、弱网。
 - [x] 国内 Caddy `/tank/` 静态映射、线上资源与真实浏览器 E2E。
 - [ ] 首页入口需用户确认；本阶段未改首页。
