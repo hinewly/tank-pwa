@@ -9,6 +9,7 @@ const { chromium } = require(
 
 const BASE_URL = process.env.TANK_URL || "http://127.0.0.1:8810/";
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CONTEXT_OPTIONS = process.env.TANK_DISABLE_LOCAL_AUDIO ? { serviceWorkers: "block" } : {};
 const PORTAL_SCRIPT = fs.readFileSync(
   path.resolve(__dirname, "../../daobox-home/public/portal.js"),
   "utf8"
@@ -28,6 +29,10 @@ async function attachPortalMock(page) {
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (process.env.TANK_DISABLE_LOCAL_AUDIO && url.pathname.includes("/assets/audio/local/")) {
+      await route.fulfill({ status: 404, body: "local preview audio disabled" });
+      return;
+    }
     if (url.hostname !== "daobox.app") {
       await route.continue();
       return;
@@ -89,7 +94,7 @@ async function run() {
   const shotDir = process.env.TANK_SHOT_DIR || "";
   if (shotDir) fs.mkdirSync(shotDir, { recursive: true });
   try {
-    const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const desktop = await browser.newPage({ viewport: { width: 1440, height: 900 }, ...CONTEXT_OPTIONS });
     await attachPortalMock(desktop);
     const desktopErrors = collectPageErrors(desktop);
     await desktop.goto(BASE_URL, { waitUntil: "domcontentloaded" });
@@ -299,6 +304,7 @@ async function run() {
     const cockpitBase = await desktop.evaluate(() => window.__tankTest.cockpitInfo());
     report.cockpit = { base: cockpitBase };
     report.nearMissAudio = await desktop.evaluate(() => window.__tankTest.playNearMissSound());
+    report.ricochetAudio = await desktop.evaluate(() => window.__tankTest.playRicochetSound());
     if (shotDir) {
       await desktop.screenshot({
         path: path.join(shotDir, "PC端-第一人称战斗-20261127.png"),
@@ -761,7 +767,8 @@ async function run() {
       viewport: { width: 390, height: 844 },
       isMobile: true,
       hasTouch: true,
-      deviceScaleFactor: 2
+      deviceScaleFactor: 2,
+      ...CONTEXT_OPTIONS
     });
     await attachPortalMock(portrait);
     const portraitErrors = collectPageErrors(portrait);
@@ -784,7 +791,8 @@ async function run() {
       viewport: { width: 844, height: 390 },
       isMobile: true,
       hasTouch: true,
-      deviceScaleFactor: 2
+      deviceScaleFactor: 2,
+      ...CONTEXT_OPTIONS
     });
     await attachPortalMock(mobile);
     const mobileErrors = collectPageErrors(mobile);
@@ -1151,6 +1159,7 @@ async function run() {
     report.desktopPlay.audio.cannonSampleLoaded &&
     report.desktopPlay.audio.armorHitSampleLoaded &&
     report.desktopPlay.audio.explosionSampleLoaded &&
+    report.desktopPlay.audio.sampleErrors === 0 &&
     report.desktopPlay.audio.events.sampleShots > 0 &&
     report.engineAudio.idle.engineSampleLoaded &&
     report.engineAudio.moving.engineSampleLoaded &&
@@ -1158,6 +1167,9 @@ async function run() {
     report.engineAudio.moving.engineGain > report.engineAudio.idle.engineGain + 0.01 &&
     report.nearMissAudio.state === "running" &&
     report.nearMissAudio.events.nearMisses > 0 &&
+    report.ricochetAudio.state === "running" &&
+    report.ricochetAudio.sampleErrors === 0 &&
+    report.ricochetAudio.events.ricochets > 0 &&
     desktopStrafe.moved > 8 &&
     desktopStrafe.strafeSpeed > 20 &&
     /右移/.test(desktopStrafe.hud.text) &&

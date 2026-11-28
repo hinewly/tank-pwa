@@ -3,4 +3,5 @@
 node_modules/
 .playwright-mcp/
 _temp-screenshots/
+public/assets/audio/local/
 

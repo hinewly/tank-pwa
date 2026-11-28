@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.6";
+  const APP_VERSION = "v0.5.7";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -198,17 +198,34 @@
     let master = null;
     const sampleBuffers = new Map();
     const sampleLoading = new Map();
+    const sampleUnavailable = new Set();
     let sampleErrors = 0;
+    const useLocalAudio = location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const SOUND_FILES = {
-      cannon: "assets/audio/tank-cannon.mp3",
-      engine: "assets/audio/tank-engine-loop.mp3",
-      armorHit: "assets/audio/tank-armor-hit.mp3",
-      explosion: "assets/audio/tank-explosion.mp3"
+      cannon: [
+        "assets/audio/local/cinematic-cannon.mp3",
+        "assets/audio/tank-cannon.mp3"
+      ],
+      ricochet: [
+        "assets/audio/local/cinematic-ricochet.mp3"
+      ],
+      engine: [
+        "assets/audio/tank-engine-loop.mp3"
+      ],
+      armorHit: [
+        "assets/audio/local/cinematic-armor-hit.mp3",
+        "assets/audio/tank-armor-hit.mp3"
+      ],
+      explosion: [
+        "assets/audio/local/cinematic-explosion.mp3",
+        "assets/audio/tank-explosion.mp3"
+      ]
     };
     const events = {
       playerShots: 0,
       enemyShots: 0,
       nearMisses: 0,
+      ricochets: 0,
       hits: 0,
       sampleShots: 0,
       fallbackShots: 0
@@ -245,20 +262,29 @@
       const ac = get();
       if (!ac || !SOUND_FILES[name]) return Promise.resolve(null);
       if (sampleBuffers.has(name)) return Promise.resolve(sampleBuffers.get(name));
+      if (sampleUnavailable.has(name)) return Promise.resolve(null);
       if (sampleLoading.has(name)) return sampleLoading.get(name);
-      const pending = fetch(SOUND_FILES[name], { cache: "force-cache" })
+      const loadSource = (source) => fetch(source, { cache: "force-cache" })
         .then((response) => {
           if (!response.ok) throw new Error("sample load failed");
           return response.arrayBuffer();
         })
         .then((data) => ac.decodeAudioData(data))
+        .catch(() => null);
+      const configuredSources = Array.isArray(SOUND_FILES[name]) ? SOUND_FILES[name] : [SOUND_FILES[name]];
+      const sources = configuredSources.filter((source) => useLocalAudio || source.indexOf("assets/audio/local/") === -1);
+      const pending = sources.reduce(
+        (sequence, source) => sequence.then((buffer) => buffer || loadSource(source)),
+        Promise.resolve(null)
+      )
         .then((buffer) => {
+          if (!buffer) {
+            sampleUnavailable.add(name);
+            if (configuredSources.some((source) => source.indexOf("assets/audio/local/") === -1)) sampleErrors += 1;
+            return null;
+          }
           sampleBuffers.set(name, buffer);
           return buffer;
-        })
-        .catch(() => {
-          sampleErrors += 1;
-          return null;
         })
         .finally(() => sampleLoading.delete(name));
       sampleLoading.set(name, pending);
@@ -376,6 +402,7 @@
         const ac = get();
         if (ac) {
           ensureEngine();
+          loadSample("ricochet");
           loadSample("cannon");
           loadSample("engine");
           loadSample("armorHit");
@@ -422,6 +449,7 @@
         engineMode: engineSample ? "sample" : (engine ? "synth" : "none"),
         engineGain: engineSample ? engineSample.gain.gain.value : (engine ? engine.gain.gain.value : 0),
         cannonSampleLoaded: sampleBuffers.has("cannon"),
+        ricochetSampleLoaded: sampleBuffers.has("ricochet"),
         engineSampleLoaded: sampleBuffers.has("engine"),
         armorHitSampleLoaded: sampleBuffers.has("armorHit"),
         explosionSampleLoaded: sampleBuffers.has("explosion"),
@@ -482,6 +510,10 @@
         if (strong) tone(95, 45, 0.36, "triangle", 0.16);
       },
       ricochet: () => {
+        const ac = get();
+        if (!ac || muted) return;
+        events.ricochets += 1;
+        if (playSample("ricochet", 0.72, 0.96 + Math.random() * 0.08, 0, 11000)) return;
         tone(1450, 720, 0.18, "sawtooth", 0.1);
         noise(0.08, 0.08, 3000);
       },
@@ -2239,21 +2271,83 @@
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
       }
-      const shellLength = clamp(8 * p.scale, 4, 14);
-      const shellHeight = clamp(3.2 * p.scale, 1.4, 5);
+      const shellLength = clamp(25 * Math.sqrt(p.scale), 34, 88);
+      const shellHeight = clamp(shellLength * 0.16, 4, 10);
       const angle = previous
         ? Math.atan2(p.y - previous.y, p.x - previous.x)
         : Math.atan2(bullet.vy, bullet.vx);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(angle);
-      ctx.fillStyle = bullet.isPlayer ? "#38382f" : "#2e2922";
+
+      ctx.globalCompositeOperation = "lighter";
+      const tracer = ctx.createLinearGradient(-shellLength * 2.15, 0, shellLength * 0.55, 0);
+      tracer.addColorStop(0, "rgba(255,165,58,0)");
+      tracer.addColorStop(0.48, bullet.isPlayer ? "rgba(255,204,104,.52)" : "rgba(255,133,55,.45)");
+      tracer.addColorStop(0.82, "rgba(255,226,139,.28)");
+      tracer.addColorStop(1, "rgba(255,236,174,.02)");
+      ctx.fillStyle = tracer;
       ctx.beginPath();
-      ctx.ellipse(0, 0, shellLength, shellHeight, 0, 0, TAU);
+      ctx.moveTo(-shellLength * 2.15, -shellHeight * 0.18);
+      ctx.lineTo(shellLength * 0.55, -shellHeight * 0.24);
+      ctx.lineTo(shellLength * 0.55, shellHeight * 0.24);
+      ctx.lineTo(-shellLength * 2.15, shellHeight * 0.18);
       ctx.fill();
-      ctx.fillStyle = bullet.isPlayer ? "#ffd98f" : "#ff9b55";
+
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = bullet.isPlayer ? "#3c4743" : "#493d31";
       ctx.beginPath();
-      ctx.ellipse(shellLength * 0.45, 0, shellLength * 0.18, shellHeight * 0.7, 0, 0, TAU);
+      ctx.moveTo(-shellLength * 0.5, -shellHeight * 1.55);
+      ctx.lineTo(-shellLength * 0.3, -shellHeight * 0.55);
+      ctx.lineTo(shellLength * 0.3, -shellHeight * 0.55);
+      ctx.lineTo(shellLength * 0.5, 0);
+      ctx.lineTo(shellLength * 0.3, shellHeight * 0.55);
+      ctx.lineTo(-shellLength * 0.3, shellHeight * 0.55);
+      ctx.lineTo(-shellLength * 0.5, shellHeight * 1.55);
+      ctx.closePath();
+      ctx.fill();
+
+      const body = ctx.createLinearGradient(0, -shellHeight, 0, shellHeight);
+      body.addColorStop(0, bullet.isPlayer ? "#c4ccc1" : "#c4aa7d");
+      body.addColorStop(0.38, bullet.isPlayer ? "#7d8b80" : "#8d7352");
+      body.addColorStop(1, bullet.isPlayer ? "#38443f" : "#47382a");
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.moveTo(shellLength * 0.5, 0);
+      ctx.quadraticCurveTo(shellLength * 0.3, -shellHeight, -shellLength * 0.1, -shellHeight * 0.72);
+      ctx.lineTo(-shellLength * 0.42, -shellHeight * 0.55);
+      ctx.lineTo(-shellLength * 0.42, shellHeight * 0.55);
+      ctx.lineTo(-shellLength * 0.1, shellHeight * 0.72);
+      ctx.quadraticCurveTo(shellLength * 0.3, shellHeight, shellLength * 0.5, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = bullet.isPlayer ? "#dba562" : "#f08d50";
+      ctx.beginPath();
+      ctx.moveTo(shellLength * 0.54, 0);
+      ctx.lineTo(shellLength * 0.19, -shellHeight * 0.62);
+      ctx.lineTo(shellLength * 0.1, shellHeight * 0.62);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(255,248,210,.72)";
+      ctx.lineWidth = Math.max(0.8, shellHeight * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(-shellLength * 0.3, -shellHeight * 0.5);
+      ctx.lineTo(shellLength * 0.27, -shellHeight * 0.18);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(255,250,214,.9)";
+      ctx.lineWidth = Math.max(0.8, shellHeight * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(-shellLength * 1.55, 0);
+      ctx.lineTo(shellLength * 0.34, 0);
+      ctx.stroke();
+
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = bullet.isPlayer ? "rgba(255,225,128,.9)" : "rgba(255,145,63,.9)";
+      ctx.beginPath();
+      ctx.arc(-shellLength * 0.42, 0, Math.max(1.5, shellHeight * 0.55), 0, TAU);
       ctx.fill();
       ctx.restore();
     }
@@ -3116,7 +3210,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=18").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=19").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3404,6 +3498,10 @@
     fire: () => firePlayer(),
     playNearMissSound: () => {
       AudioFx.whoosh();
+      return AudioFx.info();
+    },
+    playRicochetSound: () => {
+      AudioFx.ricochet();
       return AudioFx.info();
     },
     projectEnemy: (id) => {
