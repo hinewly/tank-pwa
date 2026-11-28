@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.4";
+  const APP_VERSION = "v0.5.5";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -825,6 +825,7 @@
     const meta = obstacle.meta || D.OBSTACLE_TYPES[obstacle.type];
     if (obstacle.hp === null) {
       addImpactExplosion(bullet.x, bullet.y);
+      addFloat(bullet.x, bullet.y, "无法破坏", "#d8c7a2", 15);
       AudioFx.hit("front");
       if (bullet.isPlayer) showShotFeedback((meta ? meta.label : "硬掩体") + "挡住炮弹", "#ffd178");
       return;
@@ -832,6 +833,7 @@
     obstacle.hp -= bullet.damage;
     obstacle.hitFlash = 1;
     addImpactExplosion(bullet.x, bullet.y);
+    addFloat(bullet.x, bullet.y, "-" + Math.round(bullet.damage), "#f0cc81", 16);
     if (obstacle.hp <= 0) {
       obstacle.destroyed = true;
       addBurst(obstacle.x + obstacle.w / 2, obstacle.y + obstacle.h / 2, "#b57b43", 36, 190);
@@ -1816,34 +1818,114 @@
     ctx.restore();
   };
 
+  const drawContactShadow = (cx, baseY, width, height, intensity = 1) => {
+    const shadowWidth = Math.max(22, width * 0.9);
+    const shadowHeight = Math.max(7, height * 0.18);
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.globalAlpha = 0.7 * intensity;
+    ctx.fillStyle = "#4b412b";
+    ctx.beginPath();
+    ctx.moveTo(cx - width * 0.4, baseY - height * 0.04);
+    ctx.lineTo(cx + width * 0.4, baseY - height * 0.04);
+    ctx.lineTo(cx + width * 0.56, baseY + height * 0.09);
+    ctx.lineTo(cx - width * 0.56, baseY + height * 0.09);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.translate(cx, baseY + 2);
+    ctx.scale(1, shadowHeight / shadowWidth);
+    const shadow = ctx.createRadialGradient(0, 0, 1, 0, 0, shadowWidth * 0.56);
+    shadow.addColorStop(0, "rgba(5,8,5," + (0.96 * intensity) + ")");
+    shadow.addColorStop(0.48, "rgba(14,17,11," + (0.72 * intensity) + ")");
+    shadow.addColorStop(0.82, "rgba(48,44,28," + (0.28 * intensity) + ")");
+    shadow.addColorStop(1, "rgba(48,44,28,0)");
+    ctx.fillStyle = shadow;
+    ctx.beginPath();
+    ctx.arc(0, 0, shadowWidth * 0.56, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawCastShadow = (cx, baseY, width, height, intensity = 1) => {
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = "rgba(17,20,13," + (0.42 * intensity) + ")";
+    ctx.beginPath();
+    ctx.moveTo(cx - width * 0.38, baseY - 1);
+    ctx.lineTo(cx + width * 0.34, baseY + height * 0.02);
+    ctx.quadraticCurveTo(
+      cx + width * 0.72,
+      baseY + height * 0.26,
+      cx + width * 0.3,
+      baseY + height * 0.42
+    );
+    ctx.lineTo(cx - width * 0.56, baseY + height * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
   const drawObstacle = (obstacle, projection) => {
     const meta = D.OBSTACLE_TYPES[obstacle.type];
     const widthFactor = OBSTACLE_WIDTH_FACTOR[obstacle.type] || 0.78;
     const heightFactor = OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9;
     const width = clamp(Math.max(obstacle.w, obstacle.h) * projection.scale * widthFactor, 12, 340);
     const height = clamp(meta.height * projection.scale * heightFactor, 8, 300);
-    const x = projection.x - width / 2;
-    const y = projection.groundY - height;
     const sprite = coverImage(obstacle);
+    const spriteWidth = sprite
+      ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420)
+      : width;
+    const sink = Math.max(3, height * 0.16);
+    const baseY = projection.groundY + sink;
+    const x = projection.x - width / 2;
+    const y = baseY - height;
     ctx.save();
-    ctx.shadowColor = "rgba(10,15,9,.32)";
-    ctx.shadowBlur = Math.min(18, 8 * projection.scale);
-    ctx.shadowOffsetY = Math.min(8, 3 * projection.scale);
-    ctx.fillStyle = "rgba(12,17,10,.26)";
-    ctx.beginPath();
-    ctx.ellipse(projection.x, projection.groundY + 2, width * 0.55, Math.max(3, height * 0.07), 0, 0, TAU);
-    ctx.fill();
-    ctx.shadowColor = "transparent";
-    ctx.shadowOffsetY = 0;
+    drawCastShadow(projection.x, projection.groundY + 1, spriteWidth, height, 0.8);
+    drawContactShadow(projection.x, projection.groundY + 2, spriteWidth, height, 0.92);
     if (sprite) {
-      const aspect = sprite.naturalWidth / sprite.naturalHeight;
-      const drawWidth = clamp(height * aspect, 12, 420);
-      ctx.drawImage(sprite, projection.x - drawWidth / 2, y, drawWidth, height);
+      ctx.drawImage(sprite, projection.x - spriteWidth / 2, y, spriteWidth, height);
     } else if (obstacle.type === "concrete") drawConcreteBarrier(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "sandbag") drawSandbagWall(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wood") drawWoodBarricade(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "earth") drawEarthMound(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wreck") drawWreck(obstacle, x, y, width, height, projection.scale);
+    const contact = ctx.createLinearGradient(0, baseY - height * 0.2, 0, baseY + 4);
+    contact.addColorStop(0, "rgba(33,30,20,0)");
+    contact.addColorStop(0.7, "rgba(37,32,20,.18)");
+    contact.addColorStop(1, "rgba(20,18,12,.5)");
+    ctx.fillStyle = contact;
+    ctx.fillRect(projection.x - spriteWidth * 0.5, baseY - height * 0.2, spriteWidth, height * 0.2 + 5);
+    if (sprite && obstacle.hp !== null && obstacle.maxHp && obstacle.hp < obstacle.maxHp) {
+      const damage = 1 - clamp(obstacle.hp / obstacle.maxHp, 0, 1);
+      ctx.strokeStyle = "rgba(37,28,17," + (0.35 + damage * 0.4) + ")";
+      ctx.lineWidth = Math.max(1, 1.2 * projection.scale);
+      for (let i = 0; i < 4; i += 1) {
+        const crackX = projection.x + (i - 1.5) * spriteWidth * 0.14;
+        const crackY = y + height * (0.38 + (i % 2) * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(crackX, crackY);
+        ctx.lineTo(crackX + spriteWidth * 0.04, crackY + height * 0.12);
+        ctx.lineTo(crackX - spriteWidth * 0.025, crackY + height * 0.24);
+        ctx.stroke();
+      }
+      if (damage > 0.55) {
+        ctx.globalAlpha = Math.min(0.42, damage * 0.48);
+        ctx.fillStyle = "#2f2518";
+        ctx.beginPath();
+        ctx.ellipse(
+          projection.x + spriteWidth * 0.12,
+          y + height * 0.62,
+          spriteWidth * 0.13,
+          height * 0.2,
+          -0.25,
+          0,
+          TAU
+        );
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
     if (obstacle.type === "wreck" && obstacle.burningUntil > performance.now()) {
       const remaining = clamp((obstacle.burningUntil - performance.now()) / 9000, 0, 1);
       const burnWidth = sprite ? clamp(height * (sprite.naturalWidth / sprite.naturalHeight), 12, 420) : width;
@@ -1880,28 +1962,15 @@
   };
 
   const drawTankGrounding = (cx, baseY, width, height, alpha = 1) => {
-    const shadowWidth = Math.max(20, width * 0.74);
-    const shadowHeight = Math.max(6, height * 0.14);
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(cx, baseY + 2);
-    ctx.scale(1, shadowHeight / shadowWidth);
-    const gradient = ctx.createRadialGradient(0, 0, 1, 0, 0, shadowWidth * 0.55);
-    gradient.addColorStop(0, "rgba(7,10,7,.76)");
-    gradient.addColorStop(0.58, "rgba(9,13,8,.42)");
-    gradient.addColorStop(1, "rgba(10,15,9,0)");
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(0, 0, shadowWidth * 0.55, 0, TAU);
-    ctx.fill();
-    ctx.restore();
+    drawCastShadow(cx, baseY + 1, width * 1.12, height, alpha * 0.9);
+    drawContactShadow(cx, baseY + 2, width * 1.18, height, alpha);
 
     ctx.save();
-    ctx.globalAlpha = alpha * 0.84;
-    ctx.fillStyle = "rgba(10,13,9,.68)";
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.fillStyle = "rgba(8,11,8,.78)";
     ctx.beginPath();
-    ctx.ellipse(cx - width * 0.27, baseY + 1, width * 0.2, Math.max(2, height * 0.035), 0, 0, TAU);
-    ctx.ellipse(cx + width * 0.27, baseY + 1, width * 0.2, Math.max(2, height * 0.035), 0, 0, TAU);
+    ctx.ellipse(cx - width * 0.27, baseY + 1, width * 0.23, Math.max(3, height * 0.045), 0, 0, TAU);
+    ctx.ellipse(cx + width * 0.27, baseY + 1, width * 0.23, Math.max(3, height * 0.045), 0, 0, TAU);
     ctx.fill();
     ctx.restore();
   };
@@ -2014,7 +2083,7 @@
         "saturate(" + (1 - atmospheric * 0.24).toFixed(2) + ") " +
         "contrast(" + (1 - atmospheric * 0.07).toFixed(2) + ")";
     }
-    const sink = Math.max(3, height * 0.06);
+    const sink = Math.max(4, height * 0.16);
     if (selection.mirror) {
       ctx.translate(cx, baseY);
       ctx.scale(-1, 1);
@@ -2024,11 +2093,12 @@
     }
     ctx.restore();
 
-    const contact = ctx.createLinearGradient(0, baseY - height * 0.1, 0, baseY + 4);
+    const contact = ctx.createLinearGradient(0, baseY - height * 0.22, 0, baseY + 6);
     contact.addColorStop(0, "rgba(15,15,11,0)");
-    contact.addColorStop(1, "rgba(15,15,11,.25)");
+    contact.addColorStop(0.72, "rgba(15,15,11,.24)");
+    contact.addColorStop(1, "rgba(10,12,9,.56)");
     ctx.fillStyle = contact;
-    ctx.fillRect(cx - width * 0.36, baseY - height * 0.1, width * 0.72, height * 0.1 + 4);
+    ctx.fillRect(cx - width * 0.44, baseY - height * 0.22, width * 0.88, height * 0.22 + 6);
 
     const muzzleWorldX = enemy.x + Math.cos(enemy.turretAngle) * enemy.type.barrelLength;
     const muzzleWorldY = enemy.y + Math.sin(enemy.turretAngle) * enemy.type.barrelLength;
@@ -3038,7 +3108,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=16").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=17").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;

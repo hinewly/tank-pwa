@@ -1162,15 +1162,15 @@ async function run() {
     reverseControl.speed < 0 &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
-    coverDurability.wood?.before === 160 &&
-    coverDurability.wood?.after === 80 &&
+    coverDurability.wood?.before === 320 &&
+    coverDurability.wood?.after === 240 &&
     coverDurability.wood?.destroyed === false &&
     /挡住炮弹/.test(coverDurability.wood?.feedback || "") &&
-    coverDurability.sandbag?.before === 240 &&
-    coverDurability.sandbag?.after === 160 &&
+    coverDurability.sandbag?.before === 480 &&
+    coverDurability.sandbag?.after === 400 &&
     coverDurability.sandbag?.destroyed === false &&
-    coverDurability.earth?.before === 360 &&
-    coverDurability.earth?.after === 280 &&
+    coverDurability.earth?.before === 640 &&
+    coverDurability.earth?.after === 560 &&
     coverDurability.earth?.destroyed === false &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
     ring.total === 10 &&
