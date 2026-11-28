@@ -174,7 +174,7 @@
 - 最新部署验证：2026-11-28 12:59（Asia/Shanghai）
 - 公网当前版本：`v0.5.8` / `dbtank-static-v20` / 静态资源 `?v=20`
 - 初次目录上线：2026-11-27 19:57
-- 最新部署提交：`4df1fce`（`v0.5.8`）
+- 最新部署提交：`c9d047c`（`v0.5.8`）
 - Webroot：`/opt/tank-pwa/public/`
 - Caddy 路由：根域 `/tank` → 308 `/tank/`；`/tank/*` → `/opt/tank-pwa/public`
 - Caddy 备份：`/etc/caddy/Caddyfile.bak-tank-20261127-195549`
@@ -203,7 +203,7 @@
 - SW scope 为 `https://daobox.net.cn/tank/`、`dbtank-static-v20`、40 个 `/assets/` 缓存项，炮塔图、炮击和跳弹采样已缓存；断网重载进入菜单且 canvas/炮塔图可用
 - 线上 `v0.5.8` 浏览器回归通过：`cannonSampleLoaded=true`、`ricochetSampleLoaded=true`、跳弹事件已触发采样、`sampleErrors=0`；首关、第三关、PC/手机与结算流程保持通过
 - 线上公网测试为游客态，因此 401 登录/云接口断言不适用；对应登录云同步、时长锁定与空档防覆盖已在本地 `platform-check` 全部通过
-- GitHub 推送在部署后遇到 DNS 解析失败和低速中断，代码已提交到本地 `main`；网络恢复后需补推 `origin/main`
+- GitHub 普通 Git 线路遇到 DNS 解析失败和低速中断，已改用 GitHub Git Data API 补推；远端 `c9d047c` 的树哈希 `ecdb8c7…` 与本地完全一致，本地随后已对齐 `origin/main`
 - 线上截图：`_temp-screenshots/2026-11/坦克对战/线上-PC端-*.png`、`线上-手机横屏-*.png`、`线上-手机竖屏-*.png`、`线上-第1关-*.png`、`线上-第3关-*.png`
 
 ## 版本
