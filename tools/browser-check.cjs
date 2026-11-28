@@ -164,6 +164,44 @@ async function run() {
       window.__tankTest.aimAt(enemy.x, enemy.y);
       return snapshot;
     });
+    report.levelOneClearance = await desktop.evaluate(() => {
+      window.__tankTest.setViewPitch(-0.035);
+      const snapshot = window.__tankTest.getSnapshot();
+      const rows = snapshot.enemies.map((enemy) => ({
+        id: enemy.id,
+        ...window.__tankTest.shotClearanceForTest(enemy.id)
+      }));
+      window.__tankTest.setViewPitch(0);
+      return rows;
+    });
+    const concreteTarget = report.levelOneClearance.find((row) =>
+      row.blockers.some((blocker) => blocker.type === "concrete" && blocker.blocked === false)
+    );
+    report.concreteAimShot = await desktop.evaluate((id) => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const target = snapshot.enemies.find((enemy) => enemy.id === id);
+      window.__tankTest.setPlayerHp(9999);
+      window.__tankTest.aimAt(target.x, target.y);
+      window.__tankTest.setViewPitch(-0.035);
+      return { id, hpBefore: target.hp, fired: window.__tankTest.fire() };
+    }, concreteTarget.id);
+    await desktop.waitForTimeout(1100);
+    report.concreteAimShot.hpAfter = await desktop.evaluate((id) =>
+      window.__tankTest.getSnapshot().enemies.find((enemy) => enemy.id === id)?.hp,
+      report.concreteAimShot.id
+    );
+    if (shotDir) {
+      await desktop.screenshot({
+        path: path.join(shotDir, "PC端-越过混凝土命中-20261128.png"),
+        fullPage: true
+      });
+    }
+    await desktop.evaluate(() => window.__tankTest.startBattle(0));
+    await desktop.waitForTimeout(350);
+    await desktop.evaluate(() => {
+      const enemy = window.__tankTest.getSnapshot().enemies[0];
+      window.__tankTest.aimAt(enemy.x, enemy.y);
+    });
     const burningFirst = await desktop.evaluate(() => window.__tankTest.damageEnemyForTest("enemy-1", 30));
     await desktop.waitForTimeout(350);
     if (shotDir) {
@@ -1007,6 +1045,7 @@ async function run() {
   const easyCombat = report.easyCombat || {};
   const desktopStrafe = report.desktopStrafe || {};
   const levels = report.levels || [];
+  const levelOneClearance = report.levelOneClearance || [];
   const levelFlow = report.levelFlow || {};
   const levelNext = report.levelNext || {};
   const coverDurability = report.coverDurability || {};
@@ -1026,6 +1065,11 @@ async function run() {
     levels[1].obstacleTotal === 19 &&
     levels[2].enemyTotal === 10 &&
     levels[2].obstacleTotal === 37 &&
+    levelOneClearance.some((row) =>
+      row.blockers.some((blocker) => blocker.type === "concrete" && blocker.blocked === false)
+    ) &&
+    report.concreteAimShot.fired &&
+    report.concreteAimShot.hpAfter < report.concreteAimShot.hpBefore &&
     report.bulletPath.maxDelta < 0.01 &&
     report.bulletPath.highYs.every((value) => Math.abs(value - 360) < 0.01) &&
     report.bulletPath.lowYs.every((value) => Math.abs(value - 360) < 0.01) &&

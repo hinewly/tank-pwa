@@ -1,8 +1,8 @@
 # 坦克对战：钢铁代差 交接
 
 - last_updated: 2026-11-28 01:11
-- status: active（v0.5.3 国内已上线并完成线上 E2E，待用户试玩）
-- version: v0.5.3
+- status: active（v0.5.4 本地回归通过，待国内同步）
+- version: v0.5.4
 
 ## 任务目标
 
@@ -150,7 +150,7 @@
 - PC 鼠标锁定、鼠标环视、左键开火、W 驾驶、暂停/继续、胜利结算通过。
 - 手机左摇杆产生位移和车体转向；右摇杆连续改变炮塔 yaw；双指同时驾驶/环视时同时产生位移和视角变化；独立开火键扣除弹药；横向无溢出。
 - 云同步：双设备恢复、空档不覆盖、离线 pending 与联网补传全部通过。
-- PWA：SW scope `/tank/`、`dbtank-static-v15`、非 `dbtank-*` 缓存保留、离线首屏通过；39 个 `/assets/` 请求预缓存（34 张运行时素材 + manifest + 4 个音频采样），总计仍在 2 MiB 内。
+- PWA：SW scope `/tank/`、`dbtank-static-v16`、非 `dbtank-*` 缓存保留、离线首屏通过；39 个 `/assets/` 请求预缓存（34 张运行时素材 + manifest + 4 个音频采样），总计仍在 2 MiB 内。
 - portal.js 与账号 API 全部中断时，游戏仍在约 1.3 秒内进入菜单。
 - 域名自检通过，`tank-pwa` 已纳入 DB_HOME 检查。
 

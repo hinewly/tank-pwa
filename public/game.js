@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.3";
+  const APP_VERSION = "v0.5.4";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -1055,7 +1055,8 @@
         if (obstacle.destroyed || !obstacle.blocks) continue;
         const t = segmentRectHit(bullet.px, bullet.py, bullet.x, bullet.y, obstacle);
         const impactZ = lerp(bullet.pz, bullet.z, t === null ? 0 : t);
-        const obstacleHeight = obstacle.meta ? obstacle.meta.height : 70;
+        const obstacleBaseHeight = obstacle.meta ? obstacle.meta.height : 70;
+        const obstacleHeight = obstacleBaseHeight * (OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9);
         if (t !== null && t < nearestT && impactZ >= 0 && impactZ <= obstacleHeight) {
           nearestT = t;
           hitType = "obstacle";
@@ -3037,7 +3038,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=15").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=16").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3425,11 +3426,18 @@
     },
     clearShotEnemyIds: () => enemies.filter((enemy) => {
       if (!player || !enemy.alive || distanceBetween(player, enemy) > B.playerRange) return false;
-      const obstacleBlocked = obstacles.some((obstacle) =>
-        !obstacle.destroyed &&
-        obstacle.blocks &&
-        segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle) !== null
-      );
+      const targetDistance = distanceBetween(player, enemy);
+      const targetZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance;
+      if (targetZ < 0 || targetZ > 72) return false;
+      const obstacleBlocked = obstacles.some((obstacle) => {
+        if (obstacle.destroyed || !obstacle.blocks) return false;
+        const t = segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle);
+        if (t === null) return false;
+        const rayZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
+        const obstacleBaseHeight = obstacle.meta ? obstacle.meta.height : 70;
+        const obstacleHeight = obstacleBaseHeight * (OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9);
+        return rayZ >= 0 && rayZ <= obstacleHeight;
+      });
       if (obstacleBlocked) return false;
       return !enemies.some((other) =>
         other !== enemy &&
@@ -3440,6 +3448,24 @@
     enemyInRange: (id) => {
       const enemy = enemies.find((item) => item.id === id);
       return !!(enemy && player && distanceBetween(enemy, player) <= B.enemyRange);
+    },
+    shotClearanceForTest: (id) => {
+      const enemy = enemies.find((item) => item.id === id);
+      if (!enemy || !player) return null;
+      const targetDistance = distanceBetween(player, enemy);
+      const targetZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance;
+      return {
+        targetZ,
+        blockers: obstacles.map((obstacle) => {
+          if (obstacle.destroyed || !obstacle.blocks) return null;
+          const t = segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle);
+          if (t === null) return null;
+          const rayZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
+          const obstacleBaseHeight = obstacle.meta ? obstacle.meta.height : 70;
+          const height = obstacleBaseHeight * (OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9);
+          return { type: obstacle.type, t, rayZ, height, blocked: rayZ >= 0 && rayZ <= height };
+        }).filter(Boolean)
+      };
     },
     visibleEnemyIds: () => visibleEnemies().map((enemy) => enemy.id),
     destroyFirstObstacle: () => {
