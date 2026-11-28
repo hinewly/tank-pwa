@@ -9,14 +9,15 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.8";
+  const APP_VERSION = "v0.6.0";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
   const AIM_ZOOM = 3.2;
   const AIM_MOUSE_SCALE = 0.48;
-  const PITCH_LIMIT = 0.12;
+  const PITCH_LIMIT = 0.38;
   const EYE_HEIGHT = 44;
+  const MUZZLE_HEIGHT = 38;
   const $ = (id) => document.getElementById(id);
   const TAU = Math.PI * 2;
   const COARSE_POINTER = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
@@ -28,13 +29,14 @@
     width: 148,
     height: 154,
     radius: 60,
-    worldRadius: 1450
+    worldRadius: 2200
   };
   const OBSTACLE_WIDTH_FACTOR = {
     concrete: 0.72,
     wood: 0.78,
     sandbag: 0.82,
     earth: 0.84,
+    tree: 0.86,
     wreck: 0.76
   };
   const OBSTACLE_HEIGHT_FACTOR = {
@@ -42,6 +44,7 @@
     wood: 0.92,
     sandbag: 0.88,
     earth: 0.82,
+    tree: 1,
     wreck: 0.92
   };
 
@@ -57,6 +60,9 @@
   let rings = [];
   let nextEnemyId = 1;
   let levelIndex = 0;
+  let selectedEnemyType = "auto";
+  let battleEpoch = 0;
+  let battleFinishTimer = 0;
   let lastBattleWon = false;
   let kills = 0;
   let score = 0;
@@ -76,6 +82,7 @@
   let hullBobPhase = 0;
   let hullBobX = 0;
   let hullBobY = 0;
+  let hullRoll = 0;
   let hullTurnSignal = 0;
   let toastTimer = 0;
   let deferredInstallPrompt = null;
@@ -87,6 +94,7 @@
   let mouseDragging = false;
   let lastPointerX = 0;
   let lastPointerY = 0;
+  let mobileStrafe = 0;
   const keys = new Set();
   const touches = {
     left: { id: null, baseX: 0, baseY: 0, x: 0, y: 0, dx: 0, dy: 0, mag: 0 },
@@ -97,6 +105,16 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const lerp = (a, b, t) => a + (b - a) * t;
   const currentLevel = () => LEVELS[levelIndex] || LEVELS[0];
+  const currentSceneId = () => currentLevel().scene || "europe";
+  const currentScene = () => (D.SCENES && D.SCENES[currentSceneId()]) || {
+    label: "欧洲废墟",
+    backdrop: "europe"
+  };
+  const enemyTypeForSlot = (level, slot) => {
+    let typeId = selectedEnemyType === "auto" ? level.enemyType : selectedEnemyType;
+    if (typeId === "mixed") typeId = slot % 2 === 0 ? "tiger" : "sherman";
+    return TANK_TYPES[typeId] || TANK_TYPES.tiger;
+  };
   const normalizeAngle = (angle) => {
     while (angle > Math.PI) angle -= TAU;
     while (angle < -Math.PI) angle += TAU;
@@ -629,8 +647,8 @@
     burnStartedAt: 0
   });
 
-  const makeEnemy = (spawn, slot) => ({
-    type: TANK_TYPES.tiger,
+  const makeEnemy = (spawn, slot, type = TANK_TYPES.tiger) => ({
+    type,
     isPlayer: false,
     fixed: true,
     id: "enemy-" + nextEnemyId++,
@@ -643,12 +661,12 @@
     aimBias: (Math.random() - 0.5) * B.enemyAimBias,
     fireCooldown: 0,
     reload: 2.8 + slot * 0.45 + Math.random() * 0.5,
-    reloadDuration: B.enemyReload,
+    reloadDuration: type.enemyReload || B.enemyReload,
     ammo: B.magazineSize,
     shotsFired: 0,
-    hp: B.enemyHp,
-    maxHp: B.enemyHp,
-    radius: TANK_TYPES.tiger.radius,
+    hp: type.enemyHp || B.enemyHp,
+    maxHp: type.enemyHp || B.enemyHp,
+    radius: type.radius,
     alive: true,
     recoil: 0,
     hitFlash: 0,
@@ -656,7 +674,13 @@
   });
 
   const resetBattle = () => {
+    battleEpoch += 1;
+    if (battleFinishTimer) {
+      clearTimeout(battleFinishTimer);
+      battleFinishTimer = 0;
+    }
     const level = currentLevel();
+    selectedBackdrop = currentScene().backdrop;
     obstacles = D.cloneObstacles(levelIndex).map((obstacle, index) => {
       const meta = D.OBSTACLE_TYPES[obstacle.type];
       return {
@@ -690,13 +714,15 @@
     hullBobPhase = 0;
     hullBobX = 0;
     hullBobY = 0;
+    hullRoll = 0;
     hullTurnSignal = 0;
+    mobileStrafe = 0;
     battleEndedAt = 0;
     battleStartedAt = performance.now();
     player = makePlayer(WORLD.playerSpawn);
     const spawns = D.cloneSpawns(levelIndex);
     for (let i = 0; i < level.enemyTotal; i += 1) {
-      const enemy = makeEnemy(spawns[i], i);
+      const enemy = makeEnemy(spawns[i], i, enemyTypeForSlot(level, i));
       enemy.turretAngle = enemy.angle;
       enemy.targetAim = enemy.angle;
       enemies.push(enemy);
@@ -797,14 +823,14 @@
       y,
       px: x,
       py: y,
-      z: EYE_HEIGHT,
-      pz: EYE_HEIGHT,
+      z: tank.isPlayer ? MUZZLE_HEIGHT : 43,
+      pz: tank.isPlayer ? MUZZLE_HEIGHT : 43,
       vz: tank.isPlayer ? Math.tan(tank.pitch) * B.bulletSpeed : 0,
       vx: Math.cos(shotAngle) * B.bulletSpeed,
       vy: Math.sin(shotAngle) * B.bulletSpeed,
       owner: tank,
       isPlayer: tank.isPlayer,
-      damage: tank.isPlayer ? B.playerDamage : B.enemyDamage,
+      damage: tank.isPlayer ? B.playerDamage : (tank.type.enemyDamage || B.enemyDamage),
       alive: true,
       life: 2.4,
       rangeLeft: tank.isPlayer ? B.playerRange : B.enemyRange,
@@ -836,7 +862,10 @@
     const meta = obstacle.meta || D.OBSTACLE_TYPES[obstacle.type];
     // 残骸是永久实体：后续炮弹只能被它挡住，不能销毁或从画面移除。
     if (obstacle.type === "wreck") {
-      addImpactExplosion(bullet.x, bullet.y);
+      addBurst(bullet.x, bullet.y, "#ffd17a", 9, 75);
+      addBurst(bullet.x, bullet.y, "#4d463b", 4, 34);
+      addRing(bullet.x, bullet.y, 24, "rgba(255,209,122,.55)", 0.25);
+      addFloat(bullet.x, bullet.y, "永久残骸", "#ffd178", 15);
       AudioFx.hit("front");
       if (bullet.isPlayer) showShotFeedback("坦克残骸挡住炮弹", "#ffd178");
       return;
@@ -919,7 +948,10 @@
     addFloat(tank.x, tank.y, "+" + points + (combo > 1 ? "  ×" + combo : ""), "#f7e59a", 22);
     if (kills >= currentLevel().enemyTotal && enemies.length === 0) {
       bullets = bullets.filter((bullet) => bullet.isPlayer);
-      setTimeout(() => {
+      const epoch = battleEpoch;
+      battleFinishTimer = setTimeout(() => {
+        battleFinishTimer = 0;
+        if (epoch !== battleEpoch) return;
         if (state === "playing") finishBattle(true);
       }, 550);
     }
@@ -974,9 +1006,11 @@
     let throttle = 0;
     let steer = 0;
     let strafe = 0;
+    let boosting = false;
     if (touches.left.id !== null) {
       throttle = -touches.left.dy;
       steer = touches.left.dx;
+      boosting = throttle > 0.92 && touches.left.mag > 0.92;
     } else {
       if (keys.has("w") || keys.has("arrowup")) throttle += 1;
       if (keys.has("s") || keys.has("arrowdown")) throttle -= 1;
@@ -984,6 +1018,8 @@
       if (keys.has("a") || keys.has("arrowleft")) steer -= 1;
       if (keys.has("e")) strafe += 1;
       if (keys.has("q")) strafe -= 1;
+      strafe += mobileStrafe;
+      boosting = keys.has("shift") && throttle > 0;
     }
     if (touches.right.id !== null) {
       const lookScale = player.aiming ? AIM_MOUSE_SCALE : 1;
@@ -993,7 +1029,8 @@
     player.throttleInput = throttle;
     player.steerInput = steer;
 
-    const targetSpeed = throttle * (throttle >= 0 ? player.type.maxForward : player.type.maxReverse);
+    const forwardLimit = player.type.maxForward * (boosting ? player.type.boostMultiplier : 1);
+    const targetSpeed = throttle * (throttle >= 0 ? forwardLimit : player.type.maxReverse);
     player.speed = approach(
       player.speed,
       targetSpeed,
@@ -1020,8 +1057,9 @@
       1
     );
     hullBobPhase += dt * (2.2 + motionStrength * 12);
-    hullBobX = Math.sin(hullBobPhase * 1.7) * 2.6 * motionStrength + steer * 0.9 * motionStrength;
-    hullBobY = Math.sin(hullBobPhase * 3.15) * 3.4 * motionStrength;
+    hullBobX = Math.sin(hullBobPhase * 1.7) * 0.9 * motionStrength + steer * 0.45 * motionStrength;
+    hullBobY = Math.sin(hullBobPhase * 3.15) * 1.2 * motionStrength;
+    hullRoll = Math.sin(hullBobPhase * 1.45) * 0.0032 * motionStrength + steer * 0.0028 * motionStrength;
     updateWeaponTimers(player, dt);
   };
 
@@ -1321,6 +1359,7 @@
     });
     window.addEventListener("blur", () => {
       keys.clear();
+      mobileStrafe = 0;
       mouseDragging = false;
       if (player) player.aiming = false;
       if (state === "playing") pauseGame(true);
@@ -1330,7 +1369,9 @@
 
   // ---------- 场景绘制 ----------
   const drawBackdrop = () => {
-    const background = backdropImage(selectedBackdrop);
+    const scene = currentScene();
+    const backdropId = state === "menu" ? selectedBackdrop : scene.backdrop;
+    const background = backdropImage(backdropId);
     if (background) {
       const imageHeight = VIEW_H + 32;
       const imageWidth = imageHeight * background.naturalWidth / background.naturalHeight;
@@ -1361,6 +1402,30 @@
       atmospheric.addColorStop(1, "rgba(13,20,12,.22)");
       ctx.fillStyle = atmospheric;
       ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+      if (scene.coast) {
+        const horizon = horizonY();
+        const sea = ctx.createLinearGradient(0, horizon - 8, 0, horizon + 34);
+        sea.addColorStop(0, "rgba(116,165,167,.70)");
+        sea.addColorStop(0.55, "rgba(73,130,139,.78)");
+        sea.addColorStop(1, "rgba(49,94,101,0)");
+        ctx.fillStyle = sea;
+        ctx.fillRect(0, Math.max(0, horizon - 8), VIEW_W, 44);
+        ctx.strokeStyle = "rgba(231,238,213,.54)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, horizon + 2);
+        for (let x = 0; x <= VIEW_W; x += 28) {
+          ctx.lineTo(x, horizon + 2 + Math.sin((x + performance.now() * 0.03) / 34) * 2);
+        }
+        ctx.stroke();
+      }
+      if (scene.groundTint) {
+        const ground = ctx.createLinearGradient(0, horizonY(), 0, VIEW_H);
+        ground.addColorStop(0, scene.groundTint);
+        ground.addColorStop(1, "rgba(12,20,12,.24)");
+        ctx.fillStyle = ground;
+        ctx.fillRect(0, Math.max(0, horizonY()), VIEW_W, VIEW_H - Math.max(0, horizonY()));
+      }
       return;
     }
     const horizon = horizonY();
@@ -1663,6 +1728,57 @@
     }
   };
 
+  const drawTreeCover = (obstacle, x, y, width, height, scale) => {
+    const rand = obstaclePattern(obstacle, 67);
+    const cx = x + width * 0.5;
+    const trunkWidth = Math.max(5, width * 0.22);
+    const crownTop = y + height * 0.03;
+    ctx.strokeStyle = "#4b3824";
+    ctx.lineWidth = trunkWidth;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + height);
+    ctx.quadraticCurveTo(cx - width * 0.05, y + height * 0.48, cx + width * 0.02, y + height * 0.24);
+    ctx.stroke();
+    ctx.strokeStyle = "#5f482d";
+    ctx.lineWidth = Math.max(2, trunkWidth * 0.42);
+    for (let i = 0; i < 4; i += 1) {
+      const branchY = y + height * (0.3 + i * 0.11);
+      const direction = i % 2 === 0 ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, branchY);
+      ctx.lineTo(cx + direction * width * (0.34 + rand() * 0.2), branchY - height * 0.14);
+      ctx.stroke();
+    }
+    const crown = ctx.createRadialGradient(cx, y + height * 0.3, 2, cx, y + height * 0.3, width * 0.64);
+    crown.addColorStop(0, "#566d3e");
+    crown.addColorStop(0.42, "#344a30");
+    crown.addColorStop(1, "rgba(18,31,20,0)");
+    ctx.fillStyle = crown;
+    for (let i = 0; i < 8; i += 1) {
+      const angle = i / 8 * TAU;
+      const radius = width * (0.2 + rand() * 0.22);
+      ctx.beginPath();
+      ctx.ellipse(
+        cx + Math.cos(angle) * width * 0.22,
+        y + height * 0.28 + Math.sin(angle) * height * 0.15,
+        radius,
+        radius * 0.72,
+        angle,
+        0,
+        TAU
+      );
+      ctx.fill();
+    }
+    ctx.fillStyle = "#2a3828";
+    ctx.beginPath();
+    ctx.moveTo(cx - trunkWidth * 0.9, y + height);
+    ctx.lineTo(cx - trunkWidth * 0.5, crownTop + height * 0.34);
+    ctx.lineTo(cx + trunkWidth * 0.5, crownTop + height * 0.34);
+    ctx.lineTo(cx + trunkWidth * 0.9, y + height);
+    ctx.closePath();
+    ctx.fill();
+  };
+
   const drawWreck = (obstacle, x, y, width, height, scale) => {
     const rand = obstaclePattern(obstacle, 71);
     ctx.fillStyle = "rgba(12,14,11,.44)";
@@ -1889,7 +2005,9 @@
     const meta = D.OBSTACLE_TYPES[obstacle.type];
     const widthFactor = OBSTACLE_WIDTH_FACTOR[obstacle.type] || 0.78;
     const heightFactor = OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9;
-    const width = clamp(Math.max(obstacle.w, obstacle.h) * projection.scale * widthFactor, 12, 340);
+    const width = obstacle.type === "tree"
+      ? clamp(meta.height * projection.scale * 0.52, 14, 190)
+      : clamp(Math.max(obstacle.w, obstacle.h) * projection.scale * widthFactor, 12, 340);
     const height = clamp(meta.height * projection.scale * heightFactor, 8, 300);
     const sprite = coverImage(obstacle);
     const spriteWidth = sprite
@@ -1908,6 +2026,7 @@
     else if (obstacle.type === "sandbag") drawSandbagWall(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wood") drawWoodBarricade(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "earth") drawEarthMound(obstacle, x, y, width, height, projection.scale);
+    else if (obstacle.type === "tree") drawTreeCover(obstacle, x, y, width, height, projection.scale);
     else if (obstacle.type === "wreck") drawWreck(obstacle, x, y, width, height, projection.scale);
     const contact = ctx.createLinearGradient(0, baseY - height * 0.2, 0, baseY + 4);
     contact.addColorStop(0, "rgba(33,30,20,0)");
@@ -2180,6 +2299,35 @@
       ctx.fillStyle = p > 0.5 ? "#d9c66b" : "#e07354";
       ctx.fillRect(cx - width * 0.44, baseY - height - 25, width * 0.88 * p, 6);
     }
+  };
+
+  const drawFarEnemyLabels = () => {
+    for (const enemy of enemies) {
+      const p = projectedEnemy(enemy);
+      if (!p || p.distance <= B.enemyRange) continue;
+      const text = enemy.type.shortLabel + " · " + Math.round(p.distance) + "m";
+      ctx.font = "800 11px -apple-system,'PingFang SC',sans-serif";
+      const width = Math.max(82, ctx.measureText(text).width + 18);
+      const x = clamp(p.x - width / 2, 8, VIEW_W - width - 8);
+      const y = clamp(p.y - p.height - 28, 42, VIEW_H - 46);
+      ctx.fillStyle = "rgba(48,10,8,.82)";
+      roundedRect(x, y, width, 22, 5);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(241,104,78,.88)";
+      ctx.lineWidth = 1;
+      roundedRect(x, y, width, 22, 5);
+      ctx.stroke();
+      ctx.fillStyle = "#ff9a7e";
+      ctx.textAlign = "center";
+      ctx.fillText(text, x + width / 2, y + 15);
+      ctx.beginPath();
+      ctx.moveTo(x + width / 2 - 4, y + 22);
+      ctx.lineTo(x + width / 2 + 4, y + 22);
+      ctx.lineTo(x + width / 2, y + 28);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.textAlign = "left";
   };
 
   const drawWorldEffects = () => {
@@ -2511,7 +2659,7 @@
     ctx.fillText("战术雷达", MINIMAP.x + 10, MINIMAP.y + 16);
     ctx.fillStyle = "rgba(205,220,168,.62)";
     ctx.textAlign = "right";
-    ctx.fillText("1500m", MINIMAP.x + MINIMAP.width - 10, MINIMAP.y + 16);
+    ctx.fillText("2200m", MINIMAP.x + MINIMAP.width - 10, MINIMAP.y + 16);
 
     ctx.save();
     ctx.beginPath();
@@ -2692,7 +2840,7 @@
       ctx.font = "700 12px -apple-system,'PingFang SC',sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(
-        "虎式固定炮台" + (target.enemy.burning ? " · 起火" : "") + " · " + Math.round(p.distance) + " m",
+        target.enemy.type.shortLabel + "固定炮台" + (target.enemy.burning ? " · 起火" : "") + " · " + Math.round(p.distance) + " m",
         cx,
         cy + 51
       );
@@ -2755,6 +2903,44 @@
     ctx.restore();
   };
 
+  const GROUND_MARKS = Array.from({ length: 420 }, (_, index) => ({
+    x: (index * 733 + 311) % WORLD.width,
+    y: (index * 977 + 587) % WORLD.height,
+    kind: index % 5
+  }));
+
+  const drawGroundMotion = () => {
+    if (!player) return;
+    const sceneId = currentSceneId();
+    const tone = sceneId === "coast" || sceneId === "desert"
+      ? "rgba(206,181,119,.34)"
+      : sceneId === "forest"
+        ? "rgba(122,147,91,.34)"
+        : "rgba(191,184,122,.30)";
+    ctx.save();
+    ctx.strokeStyle = tone;
+    ctx.fillStyle = tone;
+    for (const mark of GROUND_MARKS) {
+      const p = projectWorld(mark.x, mark.y, 0.6);
+      if (!p || p.depth > 760 || p.x < -20 || p.x > VIEW_W + 20) continue;
+      const size = clamp(16 * p.scale, 1, 13);
+      if (mark.kind < 2) {
+        ctx.lineWidth = clamp(1.8 * p.scale, 0.7, 2);
+        ctx.beginPath();
+        ctx.moveTo(p.x - size, p.y);
+        ctx.lineTo(p.x + size, p.y + size * 0.18);
+        ctx.moveTo(p.x - size * 0.72, p.y + size * 0.38);
+        ctx.lineTo(p.x + size * 0.8, p.y + size * 0.55);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, size * 0.32, Math.max(0.7, size * 0.11), -0.2, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  };
+
   const render = () => {
     if (!ctx || !player) return;
     const scaleX = canvas.width / VIEW_W;
@@ -2766,7 +2952,12 @@
     const chassisX = shakeX + hullBobX;
     const chassisY = shakeY + hullBobY + (player.recoil / 12) * 3.5;
     ctx.setTransform(scaleX, 0, 0, scaleY, chassisX * scaleX, chassisY * scaleY);
+    ctx.translate(VIEW_W / 2, VIEW_H / 2);
+    ctx.rotate(hullRoll);
+    ctx.scale(1.012, 1.012);
+    ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
     drawBackdrop();
+    drawGroundMotion();
 
     const drawables = [];
     for (const obstacle of obstacles) {
@@ -2783,12 +2974,17 @@
       if (item.kind === "obstacle") drawObstacle(item.object, item.projection);
       else drawEnemy(item.object, item.projection);
     }
+    drawFarEnemyLabels();
     drawWreckSmokeOverlay();
     drawBullets();
     drawWorldEffects();
+
+    const cockpitX = shakeX * 0.28 + hullBobX * 0.12;
+    const cockpitY = shakeY * 0.28 + hullBobY * 0.1 + (player.recoil / 12) * 1.8;
+    ctx.setTransform(scaleX, 0, 0, scaleY, cockpitX * scaleX, cockpitY * scaleY);
     drawCockpitOverlay();
-    drawFloats();
     ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    drawFloats();
     drawAimOverlay();
     drawCompass();
     drawMinimap();
@@ -2887,12 +3083,61 @@
     });
   };
 
+  const enemySummary = () => {
+    if (selectedEnemyType === "auto") {
+      if (currentLevel().enemyType === "mixed") {
+        return { name: "混合装甲", note: "虎式 + 谢尔曼 · 固定车体 · 单发炮击" };
+      }
+      const type = TANK_TYPES[currentLevel().enemyType] || TANK_TYPES.tiger;
+      return {
+        name: type.shortLabel,
+        note: type.id === "type97" ? "轻甲 · 正面通常一炮 · 炮塔更快" : "重甲 · 正面通常两炮 · 固定车体"
+      };
+    }
+    const type = TANK_TYPES[selectedEnemyType] || TANK_TYPES.tiger;
+    return {
+      name: type.shortLabel,
+      note: type.id === "type97" ? "轻甲 · 正面通常一炮 · 炮塔更快" : "重甲 · 正面通常两炮 · 固定车体"
+    };
+  };
+
+  const renderEnemySelector = () => {
+    const host = $("enemy-selector");
+    if (!host) return;
+    const options = [
+      { id: "auto", name: "随关卡", note: "默认章节阵营" },
+      { id: "tiger", name: "德国虎式", note: "重甲两炮 · 火力高" },
+      { id: "type97", name: "日本 97 式", note: "轻甲一炮 · 转向快" },
+      { id: "sherman", name: "美国谢尔曼", note: "重甲两炮 · 均衡" }
+    ];
+    host.innerHTML = options.map((option) =>
+      '<button class="enemy-chip' + (selectedEnemyType === option.id ? " active" : "") +
+      '" type="button" data-enemy-type="' + option.id + '">' +
+        "<strong>" + option.name + "</strong><span>" + option.note + "</span>" +
+      "</button>"
+    ).join("");
+    host.querySelectorAll("[data-enemy-type]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedEnemyType = button.dataset.enemyType || "auto";
+        if (state === "menu") resetBattle();
+        else {
+          renderEnemySelector();
+          updateLevelUi();
+        }
+      });
+    });
+  };
+
   const updateLevelUi = () => {
     const level = currentLevel();
     renderLevelSelect();
+    renderEnemySelector();
     setText("menu-level-title", level.title);
     setText("menu-level-intro", level.intro);
     setText("menu-enemy-count", String(level.enemyTotal));
+    const summary = enemySummary();
+    setText("menu-enemy-name", summary.name);
+    setText("menu-enemy-note", summary.note);
     setText("btn-start-label", "开始" + level.label);
     setText("btn-start-note", level.title + " · " + level.enemyTotal + " 辆");
     setText("hud-stage", level.label);
@@ -2988,8 +3233,10 @@
   const updateMobileControls = () => {
     const fire = $("mobile-fire");
     const aim = $("mobile-aim");
+    const strafe = $("mobile-strafe");
     const hidden = state !== "playing" || locked;
     if (fire) fire.classList.toggle("hidden", hidden);
+    if (strafe) strafe.classList.toggle("hidden", hidden);
     if (aim) {
       aim.classList.toggle("hidden", hidden);
       aim.classList.toggle("active", !!(player && player.aiming));
@@ -3002,6 +3249,7 @@
     state = "menu";
     lastBattleWon = false;
     keys.clear();
+    mobileStrafe = 0;
     AudioFx.setEngine(false);
     if (player) player.aiming = false;
     setOverlay("menu", true);
@@ -3048,6 +3296,7 @@
     state = "paused";
     AudioFx.setEngine(false);
     keys.clear();
+    mobileStrafe = 0;
     if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
     setOverlay("pause-modal", true);
@@ -3085,6 +3334,7 @@
     AudioFx.setEngine(false);
     battleEndedAt = performance.now();
     keys.clear();
+    mobileStrafe = 0;
     if (player) player.aiming = false;
     if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
     const duration = Math.max(1, Math.round((battleEndedAt - battleStartedAt) / 1000));
@@ -3117,7 +3367,7 @@
       "</div>" +
       '<p class="result-note">' + (
         won
-          ? (hasNext ? "本关敌军已清除。进入下一关后敌军和工事都会增加。" : "三关敌军全部清除，钢铁代差战役已完成。")
+          ? (hasNext ? "本关敌军已清除。进入下一关后敌军、场景和工事都会变化。" : "十二关敌军全部清除，钢铁代差战役已完成。")
           : "固定炮台不会追击。可以重新开始本关，或用履带换位、掩体挡炮再寻找侧后装甲窗口。"
       ) + "</p>";
     const body = $("result-body");
@@ -3189,7 +3439,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=20").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=21").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3288,6 +3538,28 @@
       updateMobileControls();
       updateHud();
     });
+    const bindMobileStrafe = (id, value) => {
+      const button = $(id);
+      if (!button) return;
+      const release = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (mobileStrafe === value) mobileStrafe = 0;
+      };
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        mobileStrafe = value;
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch (e) {}
+      });
+      button.addEventListener("pointerup", release);
+      button.addEventListener("pointercancel", release);
+      button.addEventListener("pointerleave", release);
+    };
+    bindMobileStrafe("mobile-strafe-left", -1);
+    bindMobileStrafe("mobile-strafe-right", 1);
     $("btn-lock-close")?.addEventListener("click", () => setOverlay("time-lock", false));
     $("rotate-hint-close")?.addEventListener("click", () => {
       const hint = $("rotate-hint");
@@ -3332,8 +3604,8 @@
       muteButton.title = muted ? "声音已关闭" : "声音已开启";
     }
     setText("bearing-help", COARSE_POINTER
-      ? "左摇杆驾驶 · 右摇杆环视 · 左上战术雷达"
-      : "W 前进 · S 倒车 · A/D 左右转 · Q/E 横移 · 鼠标环视");
+      ? "左摇杆前后/转向 · 推到底加速 · 横移按钮 · 右摇杆环视"
+      : "W/S 前后 · A/D 转向 · Q/E 横移 · Shift 加速 · 鼠标环视");
     resetBattle();
     state = "menu";
     updateCanvasFrame();
@@ -3371,9 +3643,13 @@
         index: levelIndex,
         label: currentLevel().label,
         title: currentLevel().title,
+        scene: currentSceneId(),
+        sceneLabel: currentScene().label,
         enemyTotal: currentLevel().enemyTotal,
-        obstacleTotal: obstacles.length
+        obstacleTotal: obstacles.length,
+        defaultEnemyType: currentLevel().enemyType
       },
+      selectedEnemyType,
       player: player ? {
         x: player.x,
         y: player.y,
@@ -3393,6 +3669,7 @@
       } : null,
       enemies: enemies.map((enemy) => ({
         id: enemy.id,
+        type: enemy.type.id,
         x: enemy.x,
         y: enemy.y,
         angle: enemy.angle,
@@ -3440,6 +3717,12 @@
     }),
     startBattle,
     selectLevel,
+    showMenuForTest: showMenu,
+    setEnemyTypeForTest: (typeId) => {
+      selectedEnemyType = TANK_TYPES[typeId] ? typeId : "auto";
+      if (state === "menu") resetBattle();
+      return selectedEnemyType;
+    },
     restartLevel: () => startBattle(levelIndex),
     pauseGame,
     resumeGame,
@@ -3582,13 +3865,13 @@
     clearShotEnemyIds: () => enemies.filter((enemy) => {
       if (!player || !enemy.alive || distanceBetween(player, enemy) > B.playerRange) return false;
       const targetDistance = distanceBetween(player, enemy);
-      const targetZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance;
+      const targetZ = MUZZLE_HEIGHT + Math.tan(player.pitch) * targetDistance;
       if (targetZ < 0 || targetZ > 72) return false;
       const obstacleBlocked = obstacles.some((obstacle) => {
         if (obstacle.destroyed || !obstacle.blocks) return false;
         const t = segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle);
         if (t === null) return false;
-        const rayZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
+        const rayZ = MUZZLE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
         const obstacleBaseHeight = obstacle.meta ? obstacle.meta.height : 70;
         const obstacleHeight = obstacleBaseHeight * (OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9);
         return rayZ >= 0 && rayZ <= obstacleHeight;
@@ -3608,14 +3891,14 @@
       const enemy = enemies.find((item) => item.id === id);
       if (!enemy || !player) return null;
       const targetDistance = distanceBetween(player, enemy);
-      const targetZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance;
+      const targetZ = MUZZLE_HEIGHT + Math.tan(player.pitch) * targetDistance;
       return {
         targetZ,
         blockers: obstacles.map((obstacle) => {
           if (obstacle.destroyed || !obstacle.blocks) return null;
           const t = segmentRectHit(player.x, player.y, enemy.x, enemy.y, obstacle);
           if (t === null) return null;
-          const rayZ = EYE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
+          const rayZ = MUZZLE_HEIGHT + Math.tan(player.pitch) * targetDistance * t;
           const obstacleBaseHeight = obstacle.meta ? obstacle.meta.height : 70;
           const height = obstacleBaseHeight * (OBSTACLE_HEIGHT_FACTOR[obstacle.type] || 0.9);
           return { type: obstacle.type, t, rayZ, height, blocked: rayZ >= 0 && rayZ <= height };
@@ -3623,6 +3906,11 @@
       };
     },
     visibleEnemyIds: () => visibleEnemies().map((enemy) => enemy.id),
+    farEnemyLabelIds: () => enemies.filter((enemy) => {
+      const p = projectedEnemy(enemy);
+      return !!p && p.distance > B.enemyRange;
+    }).map((enemy) => enemy.id),
+    farEnemyLabelCount: () => window.__tankTest.farEnemyLabelIds().length,
     destroyFirstObstacle: () => {
       const target = obstacles.find((obstacle) => obstacle.hp !== null);
       if (!target) return;
@@ -3674,11 +3962,12 @@
     damageEnemyForTest: (id, damage = 45) => {
       const target = enemies.find((enemy) => enemy.id === id);
       if (!target) return null;
+      const impactDirection = target.angle + Math.PI;
       damageTank(target, {
         x: target.x,
         y: target.y,
-        vx: Math.cos(target.angle) * B.bulletSpeed,
-        vy: Math.sin(target.angle) * B.bulletSpeed,
+        vx: Math.cos(impactDirection) * B.bulletSpeed,
+        vy: Math.sin(impactDirection) * B.bulletSpeed,
         owner: player,
         isPlayer: true,
         damage

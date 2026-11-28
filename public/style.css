@@ -361,6 +361,33 @@ button {
   background: radial-gradient(circle at 42% 35%, #ffe8a6, #a84f2e);
 }
 
+.mobile-strafe {
+  position: fixed;
+  left: 20px;
+  bottom: max(18px, env(safe-area-inset-bottom) + 10px);
+  z-index: 1000;
+  display: none;
+  gap: 8px;
+  touch-action: none;
+}
+
+.mobile-strafe button {
+  width: 54px;
+  height: 42px;
+  border: 1px solid rgba(224, 235, 174, .52);
+  border-radius: 10px;
+  background: rgba(22, 38, 26, .78);
+  color: #e9f1c9;
+  font-size: 11px;
+  font-weight: 800;
+  touch-action: none;
+}
+
+.mobile-strafe button:active {
+  transform: scale(.95);
+  background: rgba(172, 199, 104, .48);
+}
+
 .corner {
   position: absolute;
   z-index: 15;
@@ -554,9 +581,12 @@ button {
 
 .level-select {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
+  max-height: 176px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .level-chip {
@@ -596,6 +626,47 @@ button {
 
 .level-chip.active strong {
   color: #e8f59f;
+}
+
+.enemy-selector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.enemy-chip {
+  padding: 7px 9px;
+  border: 1px solid rgba(227, 205, 153, .17);
+  border-radius: 8px;
+  background: rgba(21, 17, 10, .54);
+  color: #b9ad92;
+  text-align: left;
+  cursor: pointer;
+}
+
+.enemy-chip strong,
+.enemy-chip span {
+  display: block;
+}
+
+.enemy-chip strong {
+  color: #ddd4bd;
+  font-size: 11px;
+}
+
+.enemy-chip span {
+  margin-top: 2px;
+  font-size: 9px;
+}
+
+.enemy-chip.active {
+  border-color: rgba(238, 180, 108, .68);
+  background: rgba(154, 94, 45, .24);
+}
+
+.enemy-chip.active strong {
+  color: #ffd39a;
 }
 
 .menu-grid h2 {
@@ -1461,6 +1532,10 @@ kbd {
 @media (pointer: coarse) {
   #mobile-fire:not(.hidden),
   #mobile-aim:not(.hidden) {
+    display: flex;
+  }
+
+  .mobile-strafe:not(.hidden) {
     display: flex;
   }
 }

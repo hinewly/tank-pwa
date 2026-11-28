@@ -127,7 +127,7 @@ async function run() {
       });
     }
     report.backdrops = {};
-    for (const backdropId of ["plain", "desert", "forest", "europe"]) {
+    for (const backdropId of ["plain", "desert", "forest", "europe", "coast"]) {
       await desktop.click('[data-backdrop="' + backdropId + '"]');
       await desktop.waitForTimeout(260);
       report.backdrops[backdropId] = await desktop.evaluate(() => {
@@ -140,13 +140,15 @@ async function run() {
 
     report.levels = await desktop.evaluate(() => {
       const result = [];
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < 12; index += 1) {
         window.__tankTest.selectLevel(index);
         const snapshot = window.__tankTest.getSnapshot();
         result.push({
           index,
           label: snapshot.level.label,
           title: snapshot.level.title,
+          scene: snapshot.level.scene,
+          enemyType: snapshot.level.defaultEnemyType,
           enemyTotal: snapshot.level.enemyTotal,
           obstacleTotal: snapshot.level.obstacleTotal
         });
@@ -154,9 +156,29 @@ async function run() {
       window.__tankTest.selectLevel(0);
       return result;
     });
+    report.enemySelection = await desktop.evaluate(() => {
+      const result = {};
+      for (const type of ["type97", "sherman", "tiger"]) {
+        window.__tankTest.setEnemyTypeForTest(type);
+        window.__tankTest.startBattle(0);
+        const snapshot = window.__tankTest.getSnapshot();
+        const firstHit = window.__tankTest.damageEnemyForTest("enemy-1", 80);
+        result[type] = {
+          selected: snapshot.selectedEnemyType,
+          types: [...new Set(snapshot.enemies.map((enemy) => enemy.type))],
+          maxHp: Math.max(...snapshot.enemies.map((enemy) => enemy.hp)),
+          firstHitAlive: firstHit && firstHit.alive
+        };
+      }
+      window.__tankTest.setEnemyTypeForTest("auto");
+      window.__tankTest.showMenuForTest();
+      return result;
+    });
 
-    await desktop.click('[data-level="0"]');
-    await desktop.click("#btn-start");
+    await desktop.evaluate(() => {
+      window.__tankTest.selectLevel(0);
+      window.__tankTest.startBattle(0);
+    });
     await desktop.waitForTimeout(500);
     const levelOneStart = await desktop.evaluate(() => {
       const snapshot = window.__tankTest.getSnapshot();
@@ -165,7 +187,7 @@ async function run() {
       return snapshot;
     });
     report.levelOneClearance = await desktop.evaluate(() => {
-      window.__tankTest.setViewPitch(-0.035);
+      window.__tankTest.setViewPitch(0);
       const snapshot = window.__tankTest.getSnapshot();
       const rows = snapshot.enemies.map((enemy) => ({
         id: enemy.id,
@@ -175,14 +197,15 @@ async function run() {
       return rows;
     });
     const concreteTarget = report.levelOneClearance.find((row) =>
-      row.blockers.some((blocker) => blocker.type === "concrete" && blocker.blocked === false)
+      row.blockers.some((blocker) => blocker.type === "concrete" && blocker.blocked === false) &&
+      row.blockers.every((blocker) => !blocker.blocked)
     );
     report.concreteAimShot = await desktop.evaluate((id) => {
       const snapshot = window.__tankTest.getSnapshot();
       const target = snapshot.enemies.find((enemy) => enemy.id === id);
       window.__tankTest.setPlayerHp(9999);
       window.__tankTest.aimAt(target.x, target.y);
-      window.__tankTest.setViewPitch(-0.035);
+      window.__tankTest.setViewPitch(0);
       return { id, hpBefore: target.hp, fired: window.__tankTest.fire() };
     }, concreteTarget.id);
     await desktop.waitForTimeout(1100);
@@ -250,7 +273,14 @@ async function run() {
     }));
     await desktop.click("#btn-next-level");
     await desktop.waitForTimeout(350);
-    report.levelNext.started = await desktop.evaluate(() => window.__tankTest.getSnapshot().level);
+    report.levelNext.started = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      return {
+        ...snapshot.level,
+        wrecks: snapshot.obstacles.filter((obstacle) => obstacle.type === "wreck").length,
+        destroyedObstacles: snapshot.obstacles.filter((obstacle) => obstacle.destroyed).length
+      };
+    });
 
     await desktop.evaluate(() => window.__tankTest.startBattle(2));
     await desktop.waitForTimeout(500);
@@ -323,7 +353,7 @@ async function run() {
       muzzleX: cockpitFlash.cockpit.muzzleX,
       muzzleY: cockpitFlash.cockpit.muzzleY
     };
-    await desktop.evaluate(() => window.__tankTest.startBattle());
+    await desktop.evaluate(() => window.__tankTest.startBattle(11));
     await desktop.waitForTimeout(100);
     const initial = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     report.range = {
@@ -342,6 +372,28 @@ async function run() {
       enemyDistanceMax: initial.enemyDistanceMax,
       difficulty: initial.difficulty
     };
+    report.farTargets = await desktop.evaluate(() => {
+      const snapshot = window.__tankTest.getSnapshot();
+      const labeled = new Set();
+      for (const enemy of snapshot.enemies) {
+        window.__tankTest.setViewYaw(Math.atan2(enemy.y - snapshot.player.y, enemy.x - snapshot.player.x));
+        for (const id of window.__tankTest.farEnemyLabelIds()) labeled.add(id);
+      }
+      return {
+        total: snapshot.enemyCount,
+        labeled: labeled.size,
+        enemyRange: snapshot.enemyRange,
+        playerRange: snapshot.playerRange
+      };
+    });
+    report.pitchLimit = await desktop.evaluate(() => {
+      window.__tankTest.setViewPitch(1);
+      const high = window.__tankTest.getSnapshot().player.pitch;
+      window.__tankTest.setViewPitch(-1);
+      const low = window.__tankTest.getSnapshot().player.pitch;
+      window.__tankTest.setViewPitch(0);
+      return { high, low };
+    });
     report.minimap = await desktop.evaluate(() => window.__tankTest.minimapInfo());
     report.tankViews = await desktop.evaluate(() => {
       const enemy = window.__tankTest.getSnapshot().enemies[0];
@@ -365,8 +417,8 @@ async function run() {
       const snapshot = window.__tankTest.getSnapshot();
       const target = snapshot.enemies[0];
       let best = null;
-      for (let x = 100; x <= 2900; x += 100) {
-        for (let y = 100; y <= 2500; y += 100) {
+      for (let x = 100; x <= 4300; x += 100) {
+        for (let y = 100; y <= 3900; y += 100) {
           if (!window.__tankTest.setPlayerPosition(x, y)) continue;
           const distance = Math.hypot(target.x - x, target.y - y);
           if (!best || distance > best.distance) best = { x, y, distance };
@@ -544,6 +596,22 @@ async function run() {
       speed: reverseEnd.speed
     };
 
+    await desktop.evaluate(() => window.__tankTest.startBattle(0));
+    await desktop.waitForTimeout(100);
+    await desktop.keyboard.down("w");
+    await desktop.keyboard.down("Shift");
+    await desktop.waitForTimeout(650);
+    const boostEnd = await desktop.evaluate(() => window.__tankTest.getSnapshot().player);
+    await desktop.keyboard.up("Shift");
+    await desktop.keyboard.up("w");
+    report.boostControl = { speed: boostEnd.speed };
+
+    await desktop.evaluate(() => window.__tankTest.startBattle(1));
+    report.treeCover = await desktop.evaluate(() => ({
+      first: window.__tankTest.damageObstacleOfType("tree"),
+      second: window.__tankTest.damageObstacleOfType("tree")
+    }));
+    await desktop.evaluate(() => window.__tankTest.startBattle(0));
     report.coverDurability = await desktop.evaluate(() => {
       const wood = window.__tankTest.damageObstacleOfType("wood");
       const sandbag = window.__tankTest.damageObstacleOfType("sandbag");
@@ -568,6 +636,8 @@ async function run() {
       };
     });
 
+    await desktop.evaluate(() => window.__tankTest.startBattle(11));
+    await desktop.waitForTimeout(120);
     report.ringView = await desktop.evaluate(() => {
       const snapshot = window.__tankTest.getSnapshot();
       const seen = new Set();
@@ -654,23 +724,12 @@ async function run() {
     report.desktopResume = await desktop.evaluate(() => window.__tankTest.state);
 
     await desktop.evaluate(() => {
+      window.__tankTest.startBattle(2);
       window.__tankTest.setPlayerHp(9999);
-      window.__tankTest.setPlayerPosition(1500, 1300);
+      window.__tankTest.setPlayerPosition(2380, 1850);
     });
     await desktop.waitForTimeout(180);
     const fixedBefore = await desktop.evaluate(() => window.__tankTest.getSnapshot());
-    for (const position of [
-      { x: 1500, y: 1200, yaw: -1.7 },
-      { x: 1300, y: 1300, yaw: 2.2 },
-      { x: 1700, y: 1300, yaw: 0.45 }
-    ]) {
-      await desktop.evaluate(({ x, y, yaw }) => {
-        window.__tankTest.setPlayerPosition(x, y);
-        window.__tankTest.setViewYaw(yaw);
-        window.__tankTest.fire();
-      }, position);
-      await desktop.waitForTimeout(300);
-    }
     await desktop.waitForTimeout(8000);
     const fixedAfter = await desktop.evaluate(() => window.__tankTest.getSnapshot());
     const fixedBeforeById = new Map(fixedBefore.enemies.map((enemy) => [enemy.id, enemy]));
@@ -714,8 +773,8 @@ async function run() {
     };
 
     await desktop.evaluate(() => {
-      window.__tankTest.startBattle();
-      window.__tankTest.setPlayerPosition(1480, 1730);
+      window.__tankTest.startBattle(0);
+      window.__tankTest.setPlayerPosition(2200, 2000);
     });
     await desktop.waitForTimeout(150);
     const easyStart = await desktop.evaluate(() => window.__tankTest.getSnapshot());
@@ -791,7 +850,7 @@ async function run() {
     const mobileErrors = collectPageErrors(mobile);
     await mobile.goto(BASE_URL, { waitUntil: "domcontentloaded" });
     await mobile.waitForTimeout(1500);
-    await mobile.evaluate(() => window.__tankTest.selectLevel(2));
+    await mobile.evaluate(() => window.__tankTest.selectLevel(11));
     await mobile.click("#btn-start");
     await mobile.waitForTimeout(450);
     const mobileCockpitBase = await mobile.evaluate(() => window.__tankTest.cockpitInfo());
@@ -884,6 +943,27 @@ async function run() {
       }));
     });
     const afterMove = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    await mobile.evaluate(() => window.__tankTest.startBattle());
+    await mobile.waitForTimeout(100);
+    const mobileStrafeStart = await mobile.evaluate(() => window.__tankTest.getSnapshot());
+    const strafeButton = await mobile.locator("#mobile-strafe-right").boundingBox();
+    await mobile.locator("#mobile-strafe-right").dispatchEvent("pointerdown", {
+      pointerId: 43,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
+    await mobile.waitForTimeout(420);
+    const strafeEnd = await mobile.evaluate(() => ({
+      snapshot: window.__tankTest.getSnapshot(),
+      hud: window.__tankTest.movementHud()
+    }));
+    await mobile.locator("#mobile-strafe-right").dispatchEvent("pointerup", {
+      pointerId: 43,
+      pointerType: "touch",
+      bubbles: true,
+      cancelable: true
+    });
 
     await mobile.evaluate(({ width, height }) => {
       const canvas = document.getElementById("game");
@@ -1002,6 +1082,14 @@ async function run() {
       movingHud: mobileMoving.hud,
       hullChanged: Math.abs(afterMove.player.angle - beforeTouch.player.angle),
       lookChanged: Math.abs(afterLook.player.turretAngle - afterMove.player.turretAngle),
+      strafe: {
+        buttonVisible: !!(strafeButton && strafeButton.width > 0 && strafeButton.height > 0),
+        moved: Math.hypot(
+          strafeEnd.snapshot.player.x - mobileStrafeStart.player.x,
+          strafeEnd.snapshot.player.y - mobileStrafeStart.player.y
+        ),
+        hud: strafeEnd.hud
+      },
       dualMoved: Math.hypot(afterDual.player.x - beforeDual.player.x, afterDual.player.y - beforeDual.player.y),
       dualLookChanged: Math.abs(afterDual.player.turretAngle - beforeDual.player.turretAngle),
       fireButtonVisible: fireButtonInfo.visible,
@@ -1045,6 +1133,8 @@ async function run() {
   const tankViews = report.tankViews || {};
   const cockpit = report.cockpit || {};
   const battlefield = report.battlefield || {};
+  const farTargets = report.farTargets || {};
+  const pitchLimit = report.pitchLimit || {};
   const minimap = report.minimap || {};
   const singleShot = report.singleShot || {};
   const easyCombat = report.easyCombat || {};
@@ -1055,21 +1145,33 @@ async function run() {
   const levelNext = report.levelNext || {};
   const coverDurability = report.coverDurability || {};
   const reverseControl = report.reverseControl || {};
+  const boostControl = report.boostControl || {};
+  const enemySelection = report.enemySelection || {};
+  const treeCover = report.treeCover || {};
   const cockpitBase = cockpit.base || {};
   const cockpitAim = cockpit.aim || {};
   const passed = (
     gallery.cards === 6 &&
     gallery.loaded === 6 &&
-    gallery.backdrops === 4 &&
-    Object.values(backdrops).length === 4 &&
+    gallery.backdrops === 5 &&
+    Object.values(backdrops).length === 5 &&
     Object.values(backdrops).every((item) => item.ready && item.selected) &&
-    levels.length === 3 &&
+    levels.length === 12 &&
     levels[0].enemyTotal === 5 &&
-    levels[0].obstacleTotal === 6 &&
-    levels[1].enemyTotal === 8 &&
-    levels[1].obstacleTotal === 19 &&
-    levels[2].enemyTotal === 10 &&
-    levels[2].obstacleTotal === 37 &&
+    levels[0].obstacleTotal === 8 &&
+    levels.map((level) => level.enemyTotal).join(",") === "5,6,7,8,9,8,9,10,9,10,11,12" &&
+    levels.map((level) => level.obstacleTotal).join(",") === "8,11,13,14,16,15,18,20,18,22,24,37" &&
+    levels.map((level) => level.enemyType).join(",") === "tiger,tiger,tiger,tiger,tiger,type97,type97,type97,sherman,sherman,sherman,mixed" &&
+    new Set(levels.map((level) => level.scene)).size === 5 &&
+    enemySelection.type97?.selected === "type97" &&
+    enemySelection.type97?.types?.length === 1 &&
+    enemySelection.type97?.types?.[0] === "type97" &&
+    enemySelection.type97?.maxHp === 48 &&
+    enemySelection.type97?.firstHitAlive === false &&
+    enemySelection.sherman?.maxHp === 104 &&
+    enemySelection.sherman?.firstHitAlive === true &&
+    enemySelection.tiger?.maxHp === 104 &&
+    enemySelection.tiger?.firstHitAlive === true &&
     levelOneClearance.some((row) =>
       row.blockers.some((blocker) => blocker.type === "concrete" && blocker.blocked === false)
     ) &&
@@ -1083,7 +1185,7 @@ async function run() {
     report.highShot.fired &&
     report.highShot.hpAfter === report.highShot.hpBefore &&
     levelFlow.levelOneEnemies === 5 &&
-    levelFlow.levelOneObstacles === 6 &&
+    levelFlow.levelOneObstacles === 8 &&
     levelFlow.burningFirst?.alive &&
     levelFlow.burningFirst?.burning &&
     /起火/.test(levelFlow.burningFirst?.feedback || "") &&
@@ -1099,9 +1201,11 @@ async function run() {
     levelNext.state === "result" &&
     levelNext.nextVisible &&
     levelNext.started?.index === 1 &&
-    levelNext.started?.enemyTotal === 8 &&
-    range.range === 1500 &&
-    range.playerRange === 1500 &&
+    levelNext.started?.enemyTotal === 6 &&
+    levelNext.started?.wrecks === 0 &&
+    levelNext.started?.destroyedObstacles === 0 &&
+    range.range === 1300 &&
+    range.playerRange === 2200 &&
     range.playerReload === 0.8 &&
     range.enemyReload === 5.2 &&
     range.allInRange &&
@@ -1128,19 +1232,25 @@ async function run() {
     cockpitAim.aimScale === 1.035 &&
     cockpit.flash?.active &&
     cockpit.flash.muzzleY > 360 + 20 &&
-    battlefield.enemyDistanceMin >= 1050 &&
-    battlefield.enemyDistanceMax <= 1250 &&
+    battlefield.enemyDistanceMin >= 1500 &&
+    battlefield.enemyDistanceMax <= 1920 &&
+    farTargets.total === 12 &&
+    farTargets.labeled === 12 &&
+    farTargets.enemyRange === 1300 &&
+    farTargets.playerRange === 2200 &&
+    Math.abs(pitchLimit.high - 0.38) < 1e-9 &&
+    Math.abs(pitchLimit.low + 0.38) < 1e-9 &&
     battlefield.difficulty?.label === "新手" &&
     battlefield.difficulty.playerHp === 180 &&
     battlefield.difficulty.playerDamage === 80 &&
     battlefield.difficulty.enemyDamage === 10 &&
     battlefield.difficulty.enemySpread === 0.16 &&
     minimap.visible &&
-    minimap.enemyCount === 10 &&
-    minimap.enemies.length === 10 &&
+    minimap.enemyCount === 12 &&
+    minimap.enemies.length === 12 &&
     minimap.enemies.every((enemy) => enemy.inside) &&
     singleShot.shotsAdded === 1 &&
-    report.desktopPlay.enemyCount === 10 &&
+    report.desktopPlay.enemyCount === 12 &&
     report.desktopPlay.ammoAfter < report.desktopPlay.ammoBefore &&
     report.desktopPlay.movingSpeed > 10 &&
     report.desktopPlay.movingHud.active &&
@@ -1170,6 +1280,7 @@ async function run() {
     reverseControl.moved > 8 &&
     reverseControl.reverseDistance < -8 &&
     reverseControl.speed < 0 &&
+    boostControl.speed > 195 &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
     coverDurability.wood?.before === 80 &&
@@ -1190,9 +1301,15 @@ async function run() {
     coverDurability.enemyWood?.before === 80 &&
     coverDurability.enemyWood?.after === 70 &&
     coverDurability.enemyWood?.destroyed === false &&
+    treeCover.first?.before === 160 &&
+    treeCover.first?.after === 80 &&
+    treeCover.first?.destroyed === false &&
+    treeCover.second?.before === 80 &&
+    treeCover.second?.after === 0 &&
+    treeCover.second?.destroyed === true &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
-    ring.total === 10 &&
-    ring.seen === 10 &&
+    ring.total === 12 &&
+    ring.seen === 12 &&
     projection.closerScaleGrew &&
     projection.aimedShotHit &&
     /命中/.test(projection.shotFeedback?.text || "") &&
@@ -1205,10 +1322,10 @@ async function run() {
     report.pcAim.hullPreserved &&
     report.pcAim.turretPreserved &&
     report.pcAim.ammoPreserved &&
-    report.pcAim.compassCount === 10 &&
+    report.pcAim.compassCount === 12 &&
     report.pcAim.contextMenuBlocked &&
-    fixed.initialEnemyCount === 10 &&
-    fixed.survivors === 10 &&
+    fixed.initialEnemyCount === 7 &&
+    fixed.survivors === 7 &&
     fixed.sameEnemySet &&
     fixed.maxPositionDrift < 1e-9 &&
     fixed.maxHullAngleDrift < 1e-9 &&
@@ -1223,14 +1340,17 @@ async function run() {
     easyCombat.kills >= 2 &&
     easyCombat.state === "playing" &&
     easyCombat.playerHp > 0 &&
-    easyCombat.startX === 1480 &&
-    easyCombat.startY === 1730 &&
-    mobile.enemyCount === 10 &&
+    easyCombat.startX === 2200 &&
+    easyCombat.startY === 2000 &&
+    mobile.enemyCount === 12 &&
     mobile.fireButtonVisible &&
     mobile.shotsAddedAfterHold === 1 &&
     mobile.movingSpeed > 5 &&
     mobile.movingHud.leftStickVisible &&
     mobile.movingHud.active &&
+    mobile.strafe.buttonVisible &&
+    mobile.strafe.moved > 8 &&
+    /右移/.test(mobile.strafe.hud.text || "") &&
     mobile.aim.visible &&
     !mobile.aim.overlapped &&
     mobile.aim.open &&
