@@ -207,8 +207,8 @@ window.TankData = (() => {
   const OBSTACLE_TYPES = {
     concrete: {
       label: "混凝土",
-      hp: null,
-      destructible: false,
+      hp: 160,
+      destructible: true,
       height: 58,
       fill: "#77776f",
       edge: "#aaa99d",
@@ -216,7 +216,7 @@ window.TankData = (() => {
     },
     wood: {
       label: "木制掩体",
-      hp: 320,
+      hp: 80,
       destructible: true,
       height: 44,
       fill: "#8a5a32",
@@ -225,7 +225,7 @@ window.TankData = (() => {
     },
     sandbag: {
       label: "沙袋",
-      hp: 480,
+      hp: 80,
       destructible: true,
       height: 30,
       fill: "#9b8652",
@@ -234,7 +234,7 @@ window.TankData = (() => {
     },
     earth: {
       label: "土堆",
-      hp: 640,
+      hp: 80,
       destructible: true,
       height: 38,
       fill: "#806039",

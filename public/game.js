@@ -9,7 +9,7 @@
   const LEVELS = D.LEVELS;
   const VIEW_W = 1280;
   const VIEW_H = 720;
-  const APP_VERSION = "v0.5.5";
+  const APP_VERSION = "v0.5.6";
   const FOV = 1.72;
   const HALF_FOV = FOV / 2;
   const BASE_FOCAL = (VIEW_W / 2) / Math.tan(HALF_FOV);
@@ -823,6 +823,13 @@
   const damageObstacle = (obstacle, bullet) => {
     if (!obstacle || obstacle.destroyed) return;
     const meta = obstacle.meta || D.OBSTACLE_TYPES[obstacle.type];
+    // 残骸是永久实体：后续炮弹只能被它挡住，不能销毁或从画面移除。
+    if (obstacle.type === "wreck") {
+      addImpactExplosion(bullet.x, bullet.y);
+      AudioFx.hit("front");
+      if (bullet.isPlayer) showShotFeedback("坦克残骸挡住炮弹", "#ffd178");
+      return;
+    }
     if (obstacle.hp === null) {
       addImpactExplosion(bullet.x, bullet.y);
       addFloat(bullet.x, bullet.y, "无法破坏", "#d8c7a2", 15);
@@ -869,6 +876,7 @@
       maxHp: null,
       destroyed: false,
       blocks: true,
+      permanent: true,
       hitFlash: 0,
       meta,
       burningUntil: performance.now() + (tank.isPlayer ? 0 : 9000)
@@ -3108,7 +3116,7 @@
   const registerSw = () => {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./service-worker.js?v=17").then((registration) => {
+      navigator.serviceWorker.register("./service-worker.js?v=18").then((registration) => {
         registration.update().catch(() => {});
         registration.addEventListener("updatefound", () => {
           const installing = registration.installing;
@@ -3548,7 +3556,11 @@
       });
     },
     damageObstacleOfType: (type, damage = B.playerDamage) => {
-      const target = obstacles.find((obstacle) => obstacle.type === type && obstacle.hp !== null);
+      const target = obstacles.find((obstacle) =>
+        obstacle.type === type &&
+        obstacle.hp !== null &&
+        !obstacle.destroyed
+      );
       if (!target) return null;
       const before = target.hp;
       damageObstacle(target, {

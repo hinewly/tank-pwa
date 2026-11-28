@@ -16,13 +16,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daobox.net.cn/tank/">
   <link rel="canonical" href="https://daobox.net.cn/tank/">
-  <link rel="manifest" href="manifest.json?v=17">
+  <link rel="manifest" href="manifest.json?v=18">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="theme-color" content="#182015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
         <span class="brand-sub">钢铁代差</span>
       </div>
       <div class="topbar-tools">
-      <span class="version-badge" id="app-version">v0.5.5</span>
+      <span class="version-badge" id="app-version">v0.5.6</span>
         <button class="icon-btn" id="btn-mute" type="button" title="声音开关" aria-label="声音开关">🔊</button>
         <button class="icon-btn install-btn hidden" id="install-btn" type="button" title="安装到桌面">安装</button>
         <button class="icon-btn" id="btn-refresh" type="button" title="强制刷新本应用" aria-label="强制刷新">
@@ -221,7 +221,7 @@
             <li><kbd>W</kbd> 前进、<kbd>S</kbd> 倒车、<kbd>A/D</kbd> 车体左转/右转、<kbd>Q/E</kbd> 左右横移；加速时发动机声会随油门和车速变大。</li>
             <li>敌方车体生成后不会移动或转向，只有炮塔按有限速度追踪；各关虎式独立装填，每次只打一发炮弹。99A 命中虎式正面最多两炮击毁。</li>
             <li>左上战术雷达始终以炮塔朝向为上方，显示玩家车体/炮塔方向、四面敌军和主要掩体；敌军炮口闪光时雷达标记同步亮起。</li>
-            <li>木障约 2 炮、沙袋约 3 炮、土堆约 5 炮才会被摧毁；混凝土与坦克残骸永久阻挡。打中掩体时准星下方会提示剩余耐久。</li>
+            <li>99A 主炮可一炮摧毁木障、沙袋和土堆，混凝土最多两炮；敌方虎炮打这些工事需要多炮。坦克残骸永久阻挡，不会因再次中炮消失。</li>
             <li>固定炮台不检查视线，只判断炮塔对准和射程；炮弹会真实撞上混凝土、沙袋、木障、敌车与残骸，因此掩体只能提供临时保护。</li>
           </ul>
         </div>
@@ -262,9 +262,9 @@
       if (login) login.href = window.DB_HOME + "/login?src=tank&redirect=" + encodeURIComponent(location.href);
     })();
   </script>
-  <script src="data.js?v=17"></script>
-  <script src="sync.js?v=17"></script>
-  <script src="game.js?v=17"></script>
+  <script src="data.js?v=18"></script>
+  <script src="sync.js?v=18"></script>
+  <script src="game.js?v=18"></script>
   <script>
     // portal 异步注入：门户或账号接口异常时，游戏本体的 DOMContentLoaded 不被跨域脚本阻塞。
     document.addEventListener("DOMContentLoaded", () => {

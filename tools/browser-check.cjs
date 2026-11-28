@@ -543,11 +543,15 @@ async function run() {
       speed: reverseEnd.speed
     };
 
-    report.coverDurability = await desktop.evaluate(() => ({
-      wood: window.__tankTest.damageObstacleOfType("wood"),
-      sandbag: window.__tankTest.damageObstacleOfType("sandbag"),
-      earth: window.__tankTest.damageObstacleOfType("earth")
-    }));
+    report.coverDurability = await desktop.evaluate(() => {
+      const wood = window.__tankTest.damageObstacleOfType("wood");
+      const sandbag = window.__tankTest.damageObstacleOfType("sandbag");
+      const earth = window.__tankTest.damageObstacleOfType("earth");
+      const concreteFirst = window.__tankTest.damageObstacleOfType("concrete");
+      const concreteSecond = window.__tankTest.damageObstacleOfType("concrete");
+      const enemyWood = window.__tankTest.damageObstacleOfType("wood", 10);
+      return { wood, sandbag, earth, concreteFirst, concreteSecond, enemyWood };
+    });
     report.combat = await desktop.evaluate(() => {
       const tank = { angle: Math.PI };
       const front = window.__tankTest.armorProfile(tank, 0);
@@ -1162,16 +1166,24 @@ async function run() {
     reverseControl.speed < 0 &&
     report.desktopPlay.mouseAimChanged > 0.01 &&
     Math.abs(report.desktopPlay.hullChanged) > 0.01 &&
-    coverDurability.wood?.before === 320 &&
-    coverDurability.wood?.after === 240 &&
-    coverDurability.wood?.destroyed === false &&
-    /挡住炮弹/.test(coverDurability.wood?.feedback || "") &&
-    coverDurability.sandbag?.before === 480 &&
-    coverDurability.sandbag?.after === 400 &&
-    coverDurability.sandbag?.destroyed === false &&
-    coverDurability.earth?.before === 640 &&
-    coverDurability.earth?.after === 560 &&
-    coverDurability.earth?.destroyed === false &&
+    coverDurability.wood?.before === 80 &&
+    coverDurability.wood?.after === 0 &&
+    coverDurability.wood?.destroyed === true &&
+    coverDurability.sandbag?.before === 80 &&
+    coverDurability.sandbag?.after === 0 &&
+    coverDurability.sandbag?.destroyed === true &&
+    coverDurability.earth?.before === 80 &&
+    coverDurability.earth?.after === 0 &&
+    coverDurability.earth?.destroyed === true &&
+    coverDurability.concreteFirst?.before === 160 &&
+    coverDurability.concreteFirst?.after === 80 &&
+    coverDurability.concreteFirst?.destroyed === false &&
+    coverDurability.concreteSecond?.before === 80 &&
+    coverDurability.concreteSecond?.after === 0 &&
+    coverDurability.concreteSecond?.destroyed === true &&
+    coverDurability.enemyWood?.before === 80 &&
+    coverDurability.enemyWood?.after === 70 &&
+    coverDurability.enemyWood?.destroyed === false &&
     ["concrete", "sandbag", "wood", "earth"].every((type) => report.combat.coverTypes.includes(type)) &&
     ring.total === 10 &&
     ring.seen === 10 &&
